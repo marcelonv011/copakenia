@@ -105,7 +105,7 @@ export default function Torneos() {
   const [admin, setAdmin] = useState(false);
   const [torneos, setTorneos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const guest = state?.guest;
+  const guest = state?.guest; // 👈 vendrá desde el flujo de login
 
   // Crear/editar
   const [openAdd, setOpenAdd] = useState(false);
@@ -342,7 +342,7 @@ export default function Torneos() {
             </div>
           </div>
 
-          {/* Chips rápidas (scroll horizontal) */}
+          {/* Chips rápidas */}
           {dynamicCatOptions.length > 0 && (
             <div className='mt-3 flex gap-2 overflow-x-auto no-scrollbar'>
               <button
@@ -428,7 +428,8 @@ export default function Torneos() {
                 <button
                   onClick={() =>
                     nav(`/torneo/${t.id}`, {
-                      state: { admin: admin && !guest },
+                      // 👇 PASO CLAVE: llevamos guest para que Torneo.jsx lo persista
+                      state: { guest, admin: admin && !guest },
                     })
                   }
                   className='px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700'
@@ -497,7 +498,7 @@ export default function Torneos() {
         </button>
       )}
 
-      {/* Modal Crear/Editar (con animación simple) */}
+      {/* Modal Crear/Editar */}
       {openAdd && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'

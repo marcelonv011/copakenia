@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { isAdmin } from '../lib/firestore';
 
-// --- UI helpers (mismo estilo que Torneos.jsx) ---
+// --- UI helpers (coherente con Torneos.jsx) ---
 const catPillClass = (c = '') =>
   c?.startsWith('Femenino')
     ? 'bg-pink-100 text-pink-700'
@@ -55,7 +55,7 @@ const IconEdit = (props) => (
   <svg viewBox='0 0 24 24' width='18' height='18' {...props}>
     <path
       fill='currentColor'
-      d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04l-2.34-2.34a1 1 0 00-1.41 0L15.13 6.53l3.75 3.75 1.83-1.83a1 1 0 000-1.41z'
+      d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04l-2.34-2.34a1 1 0 0 0-1.41 0L15.13 6.53l3.75 3.75 1.83-1.83a1 1 0 0 0 0-1.41z'
     />
   </svg>
 );
@@ -63,7 +63,7 @@ const IconTrash = (props) => (
   <svg viewBox='0 0 24 24' width='18' height='18' {...props}>
     <path
       fill='currentColor'
-      d='M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
+      d='M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
     />
   </svg>
 );
@@ -78,11 +78,6 @@ const IconScore = (props) => (
 const IconPlus = (props) => (
   <svg viewBox='0 0 24 24' width='18' height='18' {...props}>
     <path fill='currentColor' d='M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2z' />
-  </svg>
-);
-const IconArrowDown = (props) => (
-  <svg viewBox='0 0 24 24' width='18' height='18' {...props}>
-    <path fill='currentColor' d='M7 10l5 5 5-5z' />
   </svg>
 );
 
@@ -116,7 +111,6 @@ const Avatar = ({ name, logoUrl, size = 24 }) =>
 
 // --- Lógica de posiciones ---
 function buildTable(partidosFinalizados, equiposMap) {
-  // stats por equipo: PJ, PG, PP, PF, PC, DIF, PTS (2 victoria, 1 derrota)
   const table = {};
   const ensure = (id) =>
     (table[id] ||= {
@@ -175,14 +169,32 @@ function buildTable(partidosFinalizados, equiposMap) {
 export default function Torneo() {
   const { id } = useParams(); // torneoId
   const nav = useNavigate();
-  const { state } = useLocation();
+  const { state, search } = useLocation();
 
-  const [admin, setAdmin] = useState(!!state?.admin);
+  // --- Persistencia de invitado (state -> sessionStorage -> ?guest=1) ---
+  const qsGuest = new URLSearchParams(search).get('guest') === '1';
+  const [isGuest, setIsGuest] = useState(() => {
+    const fromState = state?.guest;
+    const fromStorage = sessionStorage.getItem('guest');
+    if (typeof fromState === 'boolean') return fromState;
+    if (fromStorage === 'true' || fromStorage === 'false')
+      return fromStorage === 'true';
+    return qsGuest;
+  });
+  useEffect(() => {
+    if (typeof state?.guest === 'boolean') {
+      sessionStorage.setItem('guest', String(state.guest));
+      setIsGuest(state.guest);
+    }
+  }, [state?.guest]);
+
+  const [admin, setAdmin] = useState(false);
+  const canManage = admin && !isGuest; // 👈 sólo gestiona si NO es invitado
+
   const [torneo, setTorneo] = useState(null); // {nombre, categoria}
   const [equipos, setEquipos] = useState([]); // [{id, nombre, logoUrl?}]
   const [partidos, setPartidos] = useState([]); // [{...}]
   const [loading, setLoading] = useState(true);
-
   const [tab, setTab] = useState('fixture'); // fixture | resultados | posiciones | equipos
 
   // Modal resultado
@@ -205,7 +217,11 @@ export default function Torneo() {
   const [openTeam, setOpenTeam] = useState(false);
   const [teamForm, setTeamForm] = useState({ nombre: '', logoUrl: '' });
 
-  // Cargar permisos por si entran directo a la URL
+  // Modal confirmar eliminar partido
+  const [openDeleteMatch, setOpenDeleteMatch] = useState(false);
+  const [matchToDelete, setMatchToDelete] = useState(null);
+
+  // Cargar permisos por si entran directo
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setAdmin(await isAdmin(u?.email));
@@ -295,6 +311,7 @@ export default function Torneo() {
 
   // --- Resultado ---
   const openResultado = (match) => {
+    if (!canManage) return; // guard
     setEditingMatch(match);
     setScoreLocal(
       Number.isFinite(match?.scoreLocal) ? String(match.scoreLocal) : ''
@@ -313,7 +330,7 @@ export default function Torneo() {
   };
   const saveResultado = async (e) => {
     e.preventDefault();
-    if (!editingMatch) return;
+    if (!canManage || !editingMatch) return; // guard
     const sl = Number(scoreLocal),
       sv = Number(scoreVisitante);
     if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0)
@@ -336,6 +353,7 @@ export default function Torneo() {
     }
   };
   const revertirResultado = async (matchId) => {
+    if (!canManage) return; // guard
     if (!confirm('¿Revertir este resultado a pendiente?')) return;
     try {
       await updateDoc(doc(db, 'torneos', id, 'partidos', matchId), {
@@ -350,24 +368,27 @@ export default function Torneo() {
     }
   };
 
-  // --- Partidos (crear/borrar) ---
+  // --- Partidos (crear / confirmar borrar) ---
   const abrirNuevoPartido = () => {
+    if (!canManage) return; // guard
     setMatchForm({ localId: '', visitanteId: '', fecha: '', cancha: '' });
     setOpenMatch(true);
   };
   const guardarPartido = async (e) => {
     e.preventDefault();
+    if (!canManage) return; // guard
     const { localId, visitanteId, fecha, cancha } = matchForm;
     if (!localId || !visitanteId || localId === visitanteId)
       return alert('Elegí equipos distintos.');
     if (!fecha) return alert('Elegí fecha y hora.');
-    const dia = new Date(fecha); // Firestore lo guarda como Timestamp
+    if (!cancha || !cancha.trim()) return alert('Ingresá la cancha.');
+    const dia = new Date(fecha);
     try {
       await addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId,
         visitanteId,
         dia,
-        cancha: cancha?.trim() || '',
+        cancha: cancha.trim(),
         estado: 'pendiente',
         createdAt: serverTimestamp(),
       });
@@ -377,23 +398,36 @@ export default function Torneo() {
       alert('No se pudo crear el partido.');
     }
   };
-  const borrarPartido = async (matchId) => {
-    if (!confirm('¿Eliminar este partido?')) return;
+
+  const solicitarBorrarPartido = (match) => {
+    if (!canManage) return; // guard
+    setMatchToDelete(match);
+    setOpenDeleteMatch(true);
+  };
+  const cancelarBorrarPartido = () => {
+    setOpenDeleteMatch(false);
+    setMatchToDelete(null);
+  };
+  const ejecutarBorrarPartido = async () => {
+    if (!canManage || !matchToDelete) return; // guard
     try {
-      await deleteDoc(doc(db, 'torneos', id, 'partidos', matchId));
+      await deleteDoc(doc(db, 'torneos', id, 'partidos', matchToDelete.id));
+      cancelarBorrarPartido();
     } catch (err) {
       console.error(err);
-      alert('No se pudo eliminar.');
+      alert('No se pudo eliminar el partido.');
     }
   };
 
   // --- Equipos (crear/borrar) ---
   const abrirNuevoEquipo = () => {
+    if (!canManage) return; // guard
     setTeamForm({ nombre: '', logoUrl: '' });
     setOpenTeam(true);
   };
   const guardarEquipo = async (e) => {
     e.preventDefault();
+    if (!canManage) return; // guard
     const nombre = teamForm.nombre.trim();
     if (!nombre) return alert('Poné un nombre de equipo.');
     try {
@@ -409,6 +443,7 @@ export default function Torneo() {
     }
   };
   const borrarEquipo = async (teamId) => {
+    if (!canManage) return; // guard
     const usado = partidos.some(
       (p) => p.localId === teamId || p.visitanteId === teamId
     );
@@ -434,18 +469,11 @@ export default function Torneo() {
 
   return (
     <div className='space-y-5'>
-      {/* Header con gradiente + Volver + acciones admin */}
+      {/* Header con gradiente + Volver + acciones */}
       <div className='rounded-2xl p-[1px] bg-gradient-to-r from-blue-200 via-purple-200 to-pink-200'>
         <div className='rounded-2xl bg-white/80 backdrop-blur-sm p-4 sm:p-5'>
           <div className='flex items-center justify-between gap-3'>
             <div className='flex items-center gap-2'>
-              <button
-                onClick={() => nav(-1)}
-                className='inline-flex items-center gap-2 rounded-xl border px-3 py-2 bg-white hover:bg-gray-50 text-gray-700'
-                title='Volver'
-              >
-                <IconBack /> <span className='hidden sm:inline'>Volver</span>
-              </button>
               <div>
                 <h2 className='text-xl sm:text-2xl font-bold tracking-tight'>
                   {torneo?.nombre || 'Torneo'}
@@ -466,7 +494,7 @@ export default function Torneo() {
               <div className='hidden sm:block text-sm text-gray-500 mr-2'>
                 {equipos.length} equipos · {partidos.length} partidos
               </div>
-              {admin && (
+              {canManage && (
                 <>
                   <button
                     onClick={abrirNuevoEquipo}
@@ -559,7 +587,7 @@ export default function Torneo() {
                               equipos.find((e) => e.id === p.localId)?.logoUrl
                             }
                           />{' '}
-                          {equiposMap[p.localId] || p.localNombre || 'Local'}
+                          {equiposMap[p.localId] || 'Local'}
                           <span className='mx-1 text-gray-400'>vs</span>
                           <Avatar
                             name={equiposMap[p.visitanteId]}
@@ -568,16 +596,14 @@ export default function Torneo() {
                                 ?.logoUrl
                             }
                           />{' '}
-                          {equiposMap[p.visitanteId] ||
-                            p.visitanteNombre ||
-                            'Visitante'}
+                          {equiposMap[p.visitanteId] || 'Visitante'}
                         </div>
                         <div className='text-sm text-gray-500'>
                           {fmtFecha(p.dia)}
                           {p.cancha ? ` · ${p.cancha}` : ''}
                         </div>
                       </div>
-                      {admin && (
+                      {canManage && (
                         <div className='flex gap-2 shrink-0'>
                           <button
                             onClick={() => openResultado(p)}
@@ -587,7 +613,7 @@ export default function Torneo() {
                             <IconScore /> Cargar
                           </button>
                           <button
-                            onClick={() => borrarPartido(p.id)}
+                            onClick={() => solicitarBorrarPartido(p)}
                             className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
                             title='Eliminar partido'
                           >
@@ -649,7 +675,7 @@ export default function Torneo() {
                     {p.cancha ? ` · ${p.cancha}` : ''}
                   </div>
                 </div>
-                {admin && (
+                {canManage && (
                   <div className='flex gap-2 shrink-0'>
                     <button
                       onClick={() => openResultado(p)}
@@ -664,6 +690,13 @@ export default function Torneo() {
                       title='Revertir a pendiente'
                     >
                       Revertir
+                    </button>
+                    <button
+                      onClick={() => solicitarBorrarPartido(p)}
+                      className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
+                      title='Eliminar partido'
+                    >
+                      <IconTrash />
                     </button>
                   </div>
                 )}
@@ -728,7 +761,7 @@ export default function Torneo() {
             <div className='text-sm text-gray-600'>
               {equipos.length} equipos
             </div>
-            {admin && (
+            {canManage && (
               <button
                 onClick={abrirNuevoEquipo}
                 className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
@@ -754,7 +787,7 @@ export default function Torneo() {
                     <Avatar name={e.nombre} logoUrl={e.logoUrl} size={28} />
                     <div className='truncate'>{e.nombre}</div>
                   </div>
-                  {admin && (
+                  {canManage && (
                     <button
                       onClick={() => borrarEquipo(e.id)}
                       className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
@@ -771,7 +804,7 @@ export default function Torneo() {
       )}
 
       {/* Modal: Cargar/Editar resultado */}
-      {openResult && editingMatch && (
+      {openResult && editingMatch && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={closeResultado}
@@ -857,8 +890,8 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Modal: Nuevo partido */}
-      {openMatch && (
+      {/* Modal: Nuevo partido (cancha obligatoria) */}
+      {openMatch && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenMatch(false)}
@@ -925,7 +958,7 @@ export default function Torneo() {
                   />
                 </div>
                 <div>
-                  <label className='text-sm'>Cancha (opcional)</label>
+                  <label className='text-sm'>Cancha</label>
                   <input
                     className='mt-1 w-full rounded-xl border px-3 py-2'
                     placeholder='Ej. Club A'
@@ -933,6 +966,7 @@ export default function Torneo() {
                     onChange={(e) =>
                       setMatchForm((f) => ({ ...f, cancha: e.target.value }))
                     }
+                    required
                   />
                 </div>
               </div>
@@ -958,7 +992,7 @@ export default function Torneo() {
       )}
 
       {/* Modal: Nuevo equipo */}
-      {openTeam && (
+      {openTeam && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenTeam(false)}
@@ -992,9 +1026,8 @@ export default function Torneo() {
                   }
                 />
                 <p className='text-xs text-gray-500 mt-1'>
-                  Tip: colocá imágenes en <code>/public/logos</code> de tu
-                  proyecto y usá rutas como <code>/logos/tigres.png</code>. Sin
-                  costos ni Storage.
+                  Tip: colocá imágenes en <code>/public/logos</code> y usá rutas
+                  como <code>/logos/tigres.png</code>.
                 </p>
               </div>
 
@@ -1014,6 +1047,59 @@ export default function Torneo() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmar eliminar partido */}
+      {openDeleteMatch && matchToDelete && canManage && (
+        <div
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+          onClick={cancelarBorrarPartido}
+        >
+          <div
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className='text-lg font-semibold mb-3'>
+              ¿Estás seguro que quieres eliminar el partido?
+            </h3>
+            <p className='text-sm text-gray-600 mb-3'>
+              <EquipoTag
+                id={matchToDelete.localId}
+                nombre={equiposMap[matchToDelete.localId] || 'Local'}
+                logoUrl={
+                  equipos.find((e) => e.id === matchToDelete.localId)?.logoUrl
+                }
+              />{' '}
+              vs{' '}
+              <EquipoTag
+                id={matchToDelete.visitanteId}
+                nombre={equiposMap[matchToDelete.visitanteId] || 'Visitante'}
+                logoUrl={
+                  equipos.find((e) => e.id === matchToDelete.visitanteId)
+                    ?.logoUrl
+                }
+              />
+              <div className='text-xs mt-1'>
+                {fmtFecha(matchToDelete.dia)}
+                {matchToDelete.cancha ? ` · ${matchToDelete.cancha}` : ''}
+              </div>
+            </p>
+            <div className='flex items-center justify-end gap-2 pt-2'>
+              <button
+                onClick={cancelarBorrarPartido}
+                className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={ejecutarBorrarPartido}
+                className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         </div>
       )}
