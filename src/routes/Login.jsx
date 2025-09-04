@@ -6,9 +6,9 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
+  signOut,
 } from 'firebase/auth';
 
 const IconGoogle = (props) => (
@@ -36,14 +36,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
-  // Si ya hay sesión (por redirect o porque quedó logueado), salir de /login
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) window.location.assign('/torneos');
-    });
-    return () => unsub();
-  }, []);
-
   // Al volver del redirect, Firebase entrega el resultado aquí
   useEffect(() => {
     getRedirectResult(auth)
@@ -59,15 +51,26 @@ export default function Login() {
   const signInGoogle = async () => {
     setErr('');
     setLoading(true);
+
     const provider = new GoogleAuthProvider();
+    // 👇 obliga a mostrar el selector SIEMPRE
+    provider.setCustomParameters({ prompt: 'select_account' });
+
     try {
+      // cerramos sesión actual para que Google muestre el chooser
+      try {
+        await signOut(auth);
+      } catch {
+        /* ignoramos si no había sesión */
+      }
+
       await setPersistence(auth, browserLocalPersistence);
 
-      // 1) Probar POPUP
+      // 1) intentar popup
       await signInWithPopup(auth, provider);
       window.location.assign('/torneos');
     } catch (e) {
-      // 2) Si el popup es bloqueado / no soportado -> REDIRECT
+      // 2) fallback a redirect
       const code = e?.code || '';
       if (
         code.includes('popup-blocked') ||
@@ -76,7 +79,7 @@ export default function Login() {
       ) {
         try {
           await signInWithRedirect(auth, provider);
-          return; // volverá por getRedirectResult/onAuthStateChanged
+          return;
         } catch (er) {
           console.error('signInWithRedirect:', er);
           setErr(describirAuthError(er));
