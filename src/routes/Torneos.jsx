@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -44,32 +44,6 @@ const catPillClass = (c = '') =>
     ? 'bg-pink-100 text-pink-700'
     : 'bg-blue-100 text-blue-700';
 
-// Spinner simple
-function Spinner({ className = 'w-4 h-4' }) {
-  return (
-    <svg
-      className={`animate-spin ${className}`}
-      viewBox='0 0 24 24'
-      aria-hidden='true'
-    >
-      <circle
-        className='opacity-25'
-        cx='12'
-        cy='12'
-        r='10'
-        stroke='currentColor'
-        strokeWidth='4'
-        fill='none'
-      ></circle>
-      <path
-        className='opacity-75'
-        fill='currentColor'
-        d='M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z'
-      ></path>
-    </svg>
-  );
-}
-
 // Iconitos (SVG inline, sin libs)
 const IconPlus = (props) => (
   <svg viewBox='0 0 24 24' width='20' height='20' {...props}>
@@ -100,12 +74,11 @@ const IconArrowDown = (props) => (
 
 export default function Torneos() {
   const nav = useNavigate();
-  const { state } = useLocation();
 
   const [admin, setAdmin] = useState(false);
   const [torneos, setTorneos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const guest = state?.guest; // 👈 vendrá desde el flujo de login
+  const canManage = admin; // CRUD solo si está en admins
 
   // Crear/editar
   const [openAdd, setOpenAdd] = useState(false);
@@ -132,13 +105,25 @@ export default function Torneos() {
 
   // Suscripción a torneos (cliente)
   useEffect(() => {
-    setLoading(true);
     const q = collection(db, 'torneos');
-    const unsub = onSnapshot(q, (snap) => {
-      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setTorneos(arr);
-      setLoading(false);
-    });
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setTorneos(arr);
+        setLoading(false);
+      },
+      (err) => {
+        if (err.code === 'permission-denied') {
+          alert(
+            'No tenés permisos para ver torneos. Revisá las reglas y si estás logueado.'
+          );
+        } else {
+          console.error(err);
+        }
+        setLoading(false);
+      }
+    );
     return () => unsub();
   }, []);
 
@@ -256,7 +241,7 @@ export default function Torneos() {
                 Gestioná, buscá y filtrá tus torneos
               </p>
             </div>
-            {admin && !guest && (
+            {canManage && (
               <button
                 onClick={abrirCrear}
                 className='group inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98]'
@@ -394,7 +379,7 @@ export default function Torneos() {
           <div className='col-span-full text-center bg-white border rounded-2xl p-8 shadow-sm'>
             <div className='text-4xl mb-2'>🧐</div>
             <p className='text-gray-600'>No hay torneos para mostrar.</p>
-            {admin && !guest && (
+            {canManage && (
               <button
                 onClick={abrirCrear}
                 className='mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700'
@@ -426,18 +411,13 @@ export default function Torneos() {
 
               <div className='flex gap-2 shrink-0'>
                 <button
-                  onClick={() =>
-                    nav(`/torneo/${t.id}`, {
-                      // 👇 PASO CLAVE: llevamos guest para que Torneo.jsx lo persista
-                      state: { guest, admin: admin && !guest },
-                    })
-                  }
+                  onClick={() => nav(`/torneo/${t.id}`)}
                   className='px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700'
                   title='Entrar'
                 >
                   Entrar
                 </button>
-                {admin && !guest && (
+                {canManage && (
                   <>
                     <button
                       onClick={() => abrirEditar(t)}
@@ -487,7 +467,7 @@ export default function Torneos() {
       )}
 
       {/* FAB móvil para crear */}
-      {admin && !guest && (
+      {canManage && (
         <button
           onClick={abrirCrear}
           className='md:hidden fixed right-4 bottom-20 inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700'

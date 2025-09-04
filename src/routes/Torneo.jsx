@@ -1,5 +1,6 @@
+// src/routes/Torneo.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -16,7 +17,7 @@ import {
 } from 'firebase/firestore';
 import { isAdmin } from '../lib/firestore';
 
-// --- UI helpers (coherente con Torneos.jsx) ---
+// --- UI helpers ---
 const catPillClass = (c = '') =>
   c?.startsWith('Femenino')
     ? 'bg-pink-100 text-pink-700'
@@ -37,12 +38,12 @@ function Spinner({ className = 'w-4 h-4' }) {
         stroke='currentColor'
         strokeWidth='4'
         fill='none'
-      ></circle>
+      />
       <path
         className='opacity-75'
         fill='currentColor'
         d='M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z'
-      ></path>
+      />
     </svg>
   );
 }
@@ -109,7 +110,29 @@ const Avatar = ({ name, logoUrl, size = 24 }) =>
     </div>
   );
 
-// --- Lógica de posiciones ---
+// Tag compacto para nombres de equipos
+const EquipoTag = ({ nombre, logoUrl }) => (
+  <span className='inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white'>
+    <Avatar name={nombre} logoUrl={logoUrl} size={18} />
+    <span className='text-xs'>{nombre}</span>
+  </span>
+);
+
+// Formateo de fecha/hora (acepta Timestamp o Date)
+function fmtFecha(ts) {
+  if (!ts) return 'Sin fecha';
+  const d = ts?.seconds
+    ? new Date(ts.seconds * 1000)
+    : ts instanceof Date
+    ? ts
+    : null;
+  if (!d) return 'Sin fecha';
+  const fecha = d.toLocaleDateString();
+  const hora = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${fecha} · ${hora}`;
+}
+
+// --- Lógica de tabla de posiciones ---
 function buildTable(partidosFinalizados, equiposMap) {
   const table = {};
   const ensure = (id) =>
@@ -141,8 +164,7 @@ function buildTable(partidosFinalizados, equiposMap) {
     tV.pc += p.scoreLocal;
 
     if (p.scoreLocal === p.scoreVisitante) continue; // sin empates
-    const localGana = p.scoreLocal > p.scoreVisitante;
-    if (localGana) {
+    if (p.scoreLocal > p.scoreVisitante) {
       tL.pg++;
       tV.pp++;
     } else {
@@ -166,34 +188,113 @@ function buildTable(partidosFinalizados, equiposMap) {
   );
 }
 
-export default function Torneo() {
-  const { id } = useParams(); // torneoId
-  const nav = useNavigate();
-  const { state, search } = useLocation();
+// ---- Fila reutilizable para Fixture/Resultados ----
+// En Resultados + admin, los botones se bajan a la segunda línea (actionsBelow)
+// para que el nombre del equipo visitante quede siempre visible.
+function MatchRow({
+  localId,
+  visitanteId,
+  scoreLocal,
+  scoreVisitante,
+  equipos,
+  equiposMap,
+  ts,
+  cancha,
+  onEditScore,
+  onDelete,
+  onRevert, // opcional (solo en Resultados)
+  canManage,
+  isResult = false,
+}) {
+  const logoL = equipos.find((e) => e.id === localId)?.logoUrl;
+  const logoV = equipos.find((e) => e.id === visitanteId)?.logoUrl;
+  const actionsBelow = isResult && canManage;
 
-  // --- Persistencia de invitado (state -> sessionStorage -> ?guest=1) ---
-  const qsGuest = new URLSearchParams(search).get('guest') === '1';
-  const [isGuest, setIsGuest] = useState(() => {
-    const fromState = state?.guest;
-    const fromStorage = sessionStorage.getItem('guest');
-    if (typeof fromState === 'boolean') return fromState;
-    if (fromStorage === 'true' || fromStorage === 'false')
-      return fromStorage === 'true';
-    return qsGuest;
-  });
-  useEffect(() => {
-    if (typeof state?.guest === 'boolean') {
-      sessionStorage.setItem('guest', String(state.guest));
-      setIsGuest(state.guest);
-    }
-  }, [state?.guest]);
+  return (
+    <div className='bg-white rounded-2xl shadow-sm border p-4'>
+      <div
+        className={`flex gap-2 ${
+          actionsBelow
+            ? 'flex-col'
+            : 'flex-col sm:flex-row sm:items-center sm:justify-between'
+        }`}
+      >
+        {/* Texto / nombres */}
+        <div className='min-w-0'>
+          <div className='font-semibold truncate flex items-center gap-2'>
+            <Avatar name={equiposMap[localId]} logoUrl={logoL} />{' '}
+            {equiposMap[localId] || 'Local'}
+            {isResult ? (
+              <>
+                <span className='px-2 py-0.5 rounded bg-gray-100'>
+                  {typeof scoreLocal === 'number' ? scoreLocal : '-'}
+                </span>
+                <span className='text-gray-400'>–</span>
+                <span className='px-2 py-0.5 rounded bg-gray-100'>
+                  {typeof scoreVisitante === 'number' ? scoreVisitante : '-'}
+                </span>
+              </>
+            ) : (
+              <span className='mx-1 text-gray-400'>vs</span>
+            )}
+            {equiposMap[visitanteId] || 'Visitante'}{' '}
+            <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
+          </div>
+          <div className='text-sm text-gray-500'>
+            {fmtFecha(ts)}
+            {cancha ? ` · ${cancha}` : ''}
+          </div>
+        </div>
+
+        {/* Acciones */}
+        {canManage && (
+          <div className={`flex gap-2 flex-wrap ${actionsBelow ? 'mt-2' : ''}`}>
+            <button
+              onClick={onEditScore}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white ${
+                isResult
+                  ? 'bg-amber-500 hover:bg-amber-600'
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+              }`}
+              title={isResult ? 'Editar resultado' : 'Cargar resultado'}
+            >
+              {isResult ? <IconEdit /> : <IconScore />}
+              {isResult ? 'Editar' : 'Cargar'}
+            </button>
+
+            {isResult && onRevert && (
+              <button
+                onClick={onRevert}
+                className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+                title='Revertir a pendiente'
+              >
+                Revertir
+              </button>
+            )}
+
+            <button
+              onClick={onDelete}
+              className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
+              title='Eliminar partido'
+            >
+              <IconTrash />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+export default function Torneo() {
+  const { id } = useParams();
+  const nav = useNavigate();
 
   const [admin, setAdmin] = useState(false);
-  const canManage = admin && !isGuest; // 👈 sólo gestiona si NO es invitado
+  const canManage = admin;
 
-  const [torneo, setTorneo] = useState(null); // {nombre, categoria}
-  const [equipos, setEquipos] = useState([]); // [{id, nombre, logoUrl?}]
-  const [partidos, setPartidos] = useState([]); // [{...}]
+  const [torneo, setTorneo] = useState(null);
+  const [equipos, setEquipos] = useState([]);
+  const [partidos, setPartidos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('fixture'); // fixture | resultados | posiciones | equipos
 
@@ -221,7 +322,7 @@ export default function Torneo() {
   const [openDeleteMatch, setOpenDeleteMatch] = useState(false);
   const [matchToDelete, setMatchToDelete] = useState(null);
 
-  // Cargar permisos por si entran directo
+  // Cargar permisos
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setAdmin(await isAdmin(u?.email));
@@ -246,8 +347,7 @@ export default function Torneo() {
     const unsubPartidos = onSnapshot(
       query(collection(db, 'torneos', id, 'partidos'), orderBy('dia', 'asc')),
       (snap) => {
-        const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setPartidos(arr);
+        setPartidos(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setLoading(false);
       }
     );
@@ -259,6 +359,7 @@ export default function Torneo() {
     };
   }, [id]);
 
+  // Map id->nombre
   const equiposMap = useMemo(() => {
     const m = {};
     for (const e of equipos) m[e.id] = e.nombre;
@@ -270,7 +371,6 @@ export default function Torneo() {
     () => partidos.filter((p) => p.estado !== 'finalizado'),
     [partidos]
   );
-
   const resultados = useMemo(
     () =>
       partidos
@@ -279,13 +379,12 @@ export default function Torneo() {
         .sort((a, b) => (b.dia?.seconds ?? 0) - (a.dia?.seconds ?? 0)),
     [partidos]
   );
-
   const posiciones = useMemo(
     () => buildTable(resultados, equiposMap),
     [resultados, equiposMap]
   );
 
-  // Agrupar fixture por día (YYYY-MM-DD)
+  // Agrupar fixture por día
   const fixtureGrouped = useMemo(() => {
     const byDate = {};
     for (const p of fixture) {
@@ -294,24 +393,14 @@ export default function Torneo() {
         : 'Sin fecha';
       (byDate[key] ||= []).push(p);
     }
-    const keys = Object.keys(byDate).sort();
-    return keys.map((k) => ({ dateKey: k, matches: byDate[k] }));
+    return Object.keys(byDate)
+      .sort()
+      .map((k) => ({ dateKey: k, matches: byDate[k] }));
   }, [fixture]);
-
-  const fmtFecha = (ts) => {
-    if (!ts?.seconds) return 'Sin fecha';
-    const d = new Date(ts.seconds * 1000);
-    const fecha = d.toLocaleDateString();
-    const hora = d.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    return `${fecha} · ${hora}`;
-  };
 
   // --- Resultado ---
   const openResultado = (match) => {
-    if (!canManage) return; // guard
+    if (!canManage) return;
     setEditingMatch(match);
     setScoreLocal(
       Number.isFinite(match?.scoreLocal) ? String(match.scoreLocal) : ''
@@ -330,13 +419,12 @@ export default function Torneo() {
   };
   const saveResultado = async (e) => {
     e.preventDefault();
-    if (!canManage || !editingMatch) return; // guard
+    if (!canManage || !editingMatch) return;
     const sl = Number(scoreLocal),
       sv = Number(scoreVisitante);
     if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0)
       return alert('Cargá puntajes válidos.');
     if (sl === sv) return alert('No se permiten empates.');
-
     try {
       setSaving(true);
       await updateDoc(doc(db, 'torneos', id, 'partidos', editingMatch.id), {
@@ -353,7 +441,7 @@ export default function Torneo() {
     }
   };
   const revertirResultado = async (matchId) => {
-    if (!canManage) return; // guard
+    if (!canManage) return;
     if (!confirm('¿Revertir este resultado a pendiente?')) return;
     try {
       await updateDoc(doc(db, 'torneos', id, 'partidos', matchId), {
@@ -368,15 +456,15 @@ export default function Torneo() {
     }
   };
 
-  // --- Partidos (crear / confirmar borrar) ---
+  // --- Partidos (crear / borrar) ---
   const abrirNuevoPartido = () => {
-    if (!canManage) return; // guard
+    if (!canManage) return;
     setMatchForm({ localId: '', visitanteId: '', fecha: '', cancha: '' });
     setOpenMatch(true);
   };
   const guardarPartido = async (e) => {
     e.preventDefault();
-    if (!canManage) return; // guard
+    if (!canManage) return;
     const { localId, visitanteId, fecha, cancha } = matchForm;
     if (!localId || !visitanteId || localId === visitanteId)
       return alert('Elegí equipos distintos.');
@@ -398,9 +486,8 @@ export default function Torneo() {
       alert('No se pudo crear el partido.');
     }
   };
-
   const solicitarBorrarPartido = (match) => {
-    if (!canManage) return; // guard
+    if (!canManage) return;
     setMatchToDelete(match);
     setOpenDeleteMatch(true);
   };
@@ -409,7 +496,7 @@ export default function Torneo() {
     setMatchToDelete(null);
   };
   const ejecutarBorrarPartido = async () => {
-    if (!canManage || !matchToDelete) return; // guard
+    if (!canManage || !matchToDelete) return;
     try {
       await deleteDoc(doc(db, 'torneos', id, 'partidos', matchToDelete.id));
       cancelarBorrarPartido();
@@ -421,13 +508,13 @@ export default function Torneo() {
 
   // --- Equipos (crear/borrar) ---
   const abrirNuevoEquipo = () => {
-    if (!canManage) return; // guard
+    if (!canManage) return;
     setTeamForm({ nombre: '', logoUrl: '' });
     setOpenTeam(true);
   };
   const guardarEquipo = async (e) => {
     e.preventDefault();
-    if (!canManage) return; // guard
+    if (!canManage) return;
     const nombre = teamForm.nombre.trim();
     if (!nombre) return alert('Poné un nombre de equipo.');
     try {
@@ -443,7 +530,7 @@ export default function Torneo() {
     }
   };
   const borrarEquipo = async (teamId) => {
-    if (!canManage) return; // guard
+    if (!canManage) return;
     const usado = partidos.some(
       (p) => p.localId === teamId || p.visitanteId === teamId
     );
@@ -460,13 +547,6 @@ export default function Torneo() {
     }
   };
 
-  const EquipoTag = ({ nombre, logoUrl }) => (
-    <div className='inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white'>
-      <Avatar name={nombre} logoUrl={logoUrl} size={18} />
-      <span className='text-xs'>{nombre}</span>
-    </div>
-  );
-
   return (
     <div className='space-y-5'>
       {/* Header con gradiente + Volver + acciones */}
@@ -474,6 +554,13 @@ export default function Torneo() {
         <div className='rounded-2xl bg-white/80 backdrop-blur-sm p-4 sm:p-5'>
           <div className='flex items-center justify-between gap-3'>
             <div className='flex items-center gap-2'>
+              <button
+                onClick={() => nav(-1)}
+                className='inline-flex items-center gap-2 rounded-xl border px-3 py-2 bg-white hover:bg-gray-50 text-gray-700'
+                title='Volver'
+              >
+                <IconBack /> <span className='hidden sm:inline'>Volver</span>
+              </button>
               <div>
                 <h2 className='text-xl sm:text-2xl font-bold tracking-tight'>
                   {torneo?.nombre || 'Torneo'}
@@ -574,55 +661,18 @@ export default function Torneo() {
               </div>
               <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                 {matches.map((p) => (
-                  <div
+                  <MatchRow
                     key={p.id}
-                    className='bg-white rounded-2xl shadow-sm border p-4'
-                  >
-                    <div className='flex items-center justify-between gap-2'>
-                      <div className='min-w-0'>
-                        <div className='font-semibold truncate flex items-center gap-2'>
-                          <Avatar
-                            name={equiposMap[p.localId]}
-                            logoUrl={
-                              equipos.find((e) => e.id === p.localId)?.logoUrl
-                            }
-                          />{' '}
-                          {equiposMap[p.localId] || 'Local'}
-                          <span className='mx-1 text-gray-400'>vs</span>
-                          <Avatar
-                            name={equiposMap[p.visitanteId]}
-                            logoUrl={
-                              equipos.find((e) => e.id === p.visitanteId)
-                                ?.logoUrl
-                            }
-                          />{' '}
-                          {equiposMap[p.visitanteId] || 'Visitante'}
-                        </div>
-                        <div className='text-sm text-gray-500'>
-                          {fmtFecha(p.dia)}
-                          {p.cancha ? ` · ${p.cancha}` : ''}
-                        </div>
-                      </div>
-                      {canManage && (
-                        <div className='flex gap-2 shrink-0'>
-                          <button
-                            onClick={() => openResultado(p)}
-                            className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
-                            title='Cargar resultado'
-                          >
-                            <IconScore /> Cargar
-                          </button>
-                          <button
-                            onClick={() => solicitarBorrarPartido(p)}
-                            className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
-                            title='Eliminar partido'
-                          >
-                            <IconTrash />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    localId={p.localId}
+                    visitanteId={p.visitanteId}
+                    equipos={equipos}
+                    equiposMap={equiposMap}
+                    ts={p.dia}
+                    cancha={p.cancha}
+                    canManage={canManage}
+                    onEditScore={() => openResultado(p)}
+                    onDelete={() => solicitarBorrarPartido(p)}
+                  />
                 ))}
               </div>
             </div>
@@ -641,67 +691,22 @@ export default function Torneo() {
           )}
 
           {resultados.map((p) => (
-            <div
+            <MatchRow
               key={p.id}
-              className='bg-white rounded-2xl shadow-sm border p-4'
-            >
-              <div className='flex items-center justify-between gap-2'>
-                <div className='min-w-0'>
-                  <div className='font-semibold truncate flex items-center gap-2'>
-                    <Avatar
-                      name={equiposMap[p.localId]}
-                      logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
-                    />{' '}
-                    {equiposMap[p.localId] || 'Local'}
-                    <span className='px-2 py-0.5 rounded bg-gray-100'>
-                      {typeof p.scoreLocal === 'number' ? p.scoreLocal : '-'}
-                    </span>
-                    <span className='text-gray-400'>–</span>
-                    <span className='px-2 py-0.5 rounded bg-gray-100'>
-                      {typeof p.scoreVisitante === 'number'
-                        ? p.scoreVisitante
-                        : '-'}
-                    </span>
-                    {equiposMap[p.visitanteId] || 'Visitante'}{' '}
-                    <Avatar
-                      name={equiposMap[p.visitanteId]}
-                      logoUrl={
-                        equipos.find((e) => e.id === p.visitanteId)?.logoUrl
-                      }
-                    />
-                  </div>
-                  <div className='text-sm text-gray-500'>
-                    {fmtFecha(p.dia)}
-                    {p.cancha ? ` · ${p.cancha}` : ''}
-                  </div>
-                </div>
-                {canManage && (
-                  <div className='flex gap-2 shrink-0'>
-                    <button
-                      onClick={() => openResultado(p)}
-                      className='inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500 text-white hover:bg-amber-600'
-                      title='Editar resultado'
-                    >
-                      <IconEdit /> Editar
-                    </button>
-                    <button
-                      onClick={() => revertirResultado(p.id)}
-                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
-                      title='Revertir a pendiente'
-                    >
-                      Revertir
-                    </button>
-                    <button
-                      onClick={() => solicitarBorrarPartido(p)}
-                      className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
-                      title='Eliminar partido'
-                    >
-                      <IconTrash />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+              localId={p.localId}
+              visitanteId={p.visitanteId}
+              scoreLocal={p.scoreLocal}
+              scoreVisitante={p.scoreVisitante}
+              equipos={equipos}
+              equiposMap={equiposMap}
+              ts={p.dia}
+              cancha={p.cancha}
+              canManage={canManage}
+              isResult
+              onEditScore={() => openResultado(p)}
+              onDelete={() => solicitarBorrarPartido(p)}
+              onRevert={() => revertirResultado(p.id)}
+            />
           ))}
         </div>
       )}
@@ -816,7 +821,6 @@ export default function Torneo() {
             <h3 className='text-lg font-semibold mb-3'>Cargar resultado</h3>
             <div className='text-sm text-gray-600 mb-3'>
               <EquipoTag
-                id={editingMatch.localId}
                 nombre={equiposMap[editingMatch.localId] || 'Local'}
                 logoUrl={
                   equipos.find((e) => e.id === editingMatch.localId)?.logoUrl
@@ -824,7 +828,6 @@ export default function Torneo() {
               />{' '}
               vs{' '}
               <EquipoTag
-                id={editingMatch.visitanteId}
                 nombre={equiposMap[editingMatch.visitanteId] || 'Visitante'}
                 logoUrl={
                   equipos.find((e) => e.id === editingMatch.visitanteId)
@@ -890,7 +893,7 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Modal: Nuevo partido (cancha obligatoria) */}
+      {/* Modal: Nuevo partido */}
       {openMatch && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
@@ -1066,7 +1069,6 @@ export default function Torneo() {
             </h3>
             <p className='text-sm text-gray-600 mb-3'>
               <EquipoTag
-                id={matchToDelete.localId}
                 nombre={equiposMap[matchToDelete.localId] || 'Local'}
                 logoUrl={
                   equipos.find((e) => e.id === matchToDelete.localId)?.logoUrl
@@ -1074,7 +1076,6 @@ export default function Torneo() {
               />{' '}
               vs{' '}
               <EquipoTag
-                id={matchToDelete.visitanteId}
                 nombre={equiposMap[matchToDelete.visitanteId] || 'Visitante'}
                 logoUrl={
                   equipos.find((e) => e.id === matchToDelete.visitanteId)
