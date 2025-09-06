@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { isAdmin } from '../lib/firestore';
 
-// --- UI helpers ---
+/* ---------------- UI helpers ---------------- */
 const catPillClass = (c = '') =>
   c?.startsWith('Femenino')
     ? 'bg-pink-100 text-pink-700'
@@ -83,7 +83,7 @@ const IconPlus = (p) => (
   </svg>
 );
 
-// Avatar / EquipoTag
+/* Avatar / EquipoTag */
 const initials = (name = '') =>
   name
     .trim()
@@ -110,7 +110,6 @@ const Avatar = ({ name, logoUrl, size = 24 }) =>
       {initials(name)}
     </div>
   );
-
 const EquipoTag = ({ nombre, logoUrl }) => (
   <span className='inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white'>
     <Avatar name={nombre} logoUrl={logoUrl} size={18} />
@@ -118,7 +117,7 @@ const EquipoTag = ({ nombre, logoUrl }) => (
   </span>
 );
 
-// Fecha/hora
+/* Fecha/hora */
 function fmtFecha(ts) {
   if (!ts) return 'Sin fecha';
   const d = ts?.seconds
@@ -132,7 +131,7 @@ function fmtFecha(ts) {
   return `${fecha} · ${hora}`;
 }
 
-// Tabla posiciones
+/* Tabla posiciones */
 function buildTable(partidosFinalizados, equiposMap) {
   const table = {};
   const ensure = (id) =>
@@ -149,7 +148,8 @@ function buildTable(partidosFinalizados, equiposMap) {
     });
 
   for (const p of partidosFinalizados) {
-    const { localId: L, visitanteId: V } = p;
+    const L = p.localId,
+      V = p.visitanteId;
     if (!Number.isFinite(p.scoreLocal) || !Number.isFinite(p.scoreVisitante))
       continue;
     const tL = ensure(L),
@@ -183,7 +183,7 @@ function buildTable(partidosFinalizados, equiposMap) {
   );
 }
 
-// Fila partido (acciones abajo en admin para no tapar nombres)
+/* Fila partido (acciones abajo) */
 function MatchRow({
   localId,
   visitanteId,
@@ -205,7 +205,7 @@ function MatchRow({
   return (
     <div className='bg-white rounded-2xl shadow-sm border p-4'>
       <div className='flex items-start justify-between gap-2'>
-        <div className='min-w-0'>
+        <div className='min-w-0 w-full'>
           <div className='font-semibold flex items-center gap-2 flex-wrap'>
             <Avatar name={equiposMap[localId]} logoUrl={logoL} />{' '}
             {equiposMap[localId] || 'Local'}
@@ -227,6 +227,7 @@ function MatchRow({
             </span>
             <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
           </div>
+
           <div className='text-sm text-gray-500'>
             {fmtFecha(ts)}
             {cancha ? ` · ${cancha}` : ''}
@@ -272,6 +273,7 @@ function MatchRow({
   );
 }
 
+/* ========================= Componente ========================= */
 export default function Torneo() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -283,18 +285,16 @@ export default function Torneo() {
   const [equipos, setEquipos] = useState([]);
   const [partidos, setPartidos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('fixture'); // 'fase' solo si hay fases o es admin
 
-  // pestañas (fase final se muestra a invitados solo si hay cruces/copas)
-  const [tab, setTab] = useState('fixture');
-
-  // MODALES resultado
+  /* Resultado (modal) */
   const [openResult, setOpenResult] = useState(false);
   const [editingMatch, setEditingMatch] = useState(null);
   const [scoreLocal, setScoreLocal] = useState('');
   const [scoreVisitante, setScoreVisitante] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // MODALES crear partido / equipo
+  /* Nuevo partido/equipo (modales) */
   const [openMatch, setOpenMatch] = useState(false);
   const [matchForm, setMatchForm] = useState({
     localId: '',
@@ -305,21 +305,22 @@ export default function Torneo() {
   const [openTeam, setOpenTeam] = useState(false);
   const [teamForm, setTeamForm] = useState({ nombre: '', logoUrl: '' });
 
-  // MODAL confirmar borrar partido
+  /* Confirmar borrar partido (modal) */
   const [openDeleteMatch, setOpenDeleteMatch] = useState(false);
   const [matchToDelete, setMatchToDelete] = useState(null);
 
-  // FASE FINAL: Copas
-  const [faseCopas, setFaseCopas] = useState(null); // {oro:[], plata:[], bronce:[]}
+  /* Fase final – Copas */
+  const [faseCopas, setFaseCopas] = useState(null); // { oro:[], plata:[], bronce:[], cupos:{oro,plata,bronce} }
   const [openCopasManual, setOpenCopasManual] = useState(false);
   const [copasSel, setCopasSel] = useState({ oro: [], plata: [], bronce: [] });
+  const [copaMax, setCopaMax] = useState({ oro: 1, plata: 1, bronce: 2 });
 
-  // FASE FINAL: Playoffs
+  /* Fase final – Playoffs */
   const [openPOConfig, setOpenPOConfig] = useState(false);
   const [poN, setPoN] = useState(4); // 2|4|8|16
-  const [poSeleccion, setPoSeleccion] = useState([]); // ids elegidos para playoffs
+  const [poSeleccion, setPoSeleccion] = useState([]);
 
-  // Permisos
+  /* Permisos */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       try {
@@ -331,7 +332,7 @@ export default function Torneo() {
     return () => unsub();
   }, []);
 
-  // Suscripciones
+  /* Suscripciones */
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -364,14 +365,14 @@ export default function Torneo() {
     };
   }, [id]);
 
-  // Map id->nombre
+  /* Map id->nombre */
   const equiposMap = useMemo(() => {
     const m = {};
     for (const e of equipos) m[e.id] = e.nombre;
     return m;
   }, [equipos]);
 
-  // Derivados: fase regular
+  /* Derivados: fase regular */
   const fixture = useMemo(
     () => partidos.filter((p) => p.estado !== 'finalizado' && !p.fase),
     [partidos]
@@ -401,7 +402,7 @@ export default function Torneo() {
       .map((k) => ({ dateKey: k, matches: byDate[k] }));
   }, [fixture]);
 
-  // Derivados: fase final (playoffs ya guardados en 'partidos' con p.fase)
+  /* Derivados: fases (playoffs/copas) */
   const fasePartidos = useMemo(
     () => partidos.filter((p) => p.fase),
     [partidos]
@@ -424,7 +425,18 @@ export default function Torneo() {
       .map((k) => ({ fase: k, matches: map[k] }));
   }, [fasePartidos]);
 
-  // ---- Resultado ----
+  /* Partidos de copas (mini fixture ya creado) */
+  const cupMatches = useMemo(() => {
+    const out = { 'copa-oro': [], 'copa-plata': [], 'copa-bronce': [] };
+    for (const m of fasePartidos) {
+      if (m.fase === 'copa-oro') out['copa-oro'].push(m);
+      if (m.fase === 'copa-plata') out['copa-plata'].push(m);
+      if (m.fase === 'copa-bronce') out['copa-bronce'].push(m);
+    }
+    return out;
+  }, [fasePartidos]);
+
+  /* ---------- Resultado ---------- */
   const openResultado = (match) => {
     if (!canManage) return;
     setEditingMatch(match);
@@ -482,7 +494,7 @@ export default function Torneo() {
     }
   };
 
-  // ---- Partidos (crear / borrar) ----
+  /* ---------- CRUD Partidos/Equipos ---------- */
   const guardarPartido = async (e) => {
     e.preventDefault();
     if (!canManage) return;
@@ -491,12 +503,11 @@ export default function Torneo() {
       return alert('Elegí equipos distintos.');
     if (!fecha) return alert('Elegí fecha y hora.');
     if (!cancha || !cancha.trim()) return alert('Ingresá la cancha.');
-    const dia = new Date(fecha);
     try {
       await addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId,
         visitanteId,
-        dia,
+        dia: new Date(fecha),
         cancha: cancha.trim(),
         estado: 'pendiente',
         createdAt: serverTimestamp(),
@@ -526,8 +537,6 @@ export default function Torneo() {
       alert('No se pudo eliminar el partido.');
     }
   };
-
-  // ---- Equipos (crear/borrar) ----
   const borrarEquipo = async (teamId) => {
     if (!canManage) return;
     const usado = partidos.some(
@@ -546,9 +555,9 @@ export default function Torneo() {
     }
   };
 
-  // ====== Copas ======
+  /* ---------- Copas: recomendación y UI ---------- */
   const recomendacionCopas = useMemo(() => {
-    // Ejemplo para 4 equipos: 1->Oro, 2->Plata, 3-4->Bronce
+    // Sugerencia base: 1º→Oro, 2º→Plata, 3º-4º→Bronce (si existen)
     const ids = posiciones.map((t) => t.id);
     return {
       oro: ids[0] ? [ids[0]] : [],
@@ -562,6 +571,7 @@ export default function Torneo() {
     try {
       await setDoc(doc(db, 'torneos', id, 'fases', 'copas'), {
         ...recomendacionCopas,
+        cupos: { oro: 1, plata: 1, bronce: 2 },
         updatedAt: serverTimestamp(),
       });
       alert('Copas asignadas automáticamente.');
@@ -573,27 +583,48 @@ export default function Torneo() {
 
   const abrirCopasManual = () => {
     const base = faseCopas ||
-      recomendacionCopas || { oro: [], plata: [], bronce: [] };
+      recomendacionCopas || {
+        oro: [],
+        plata: [],
+        bronce: [],
+        cupos: { oro: 1, plata: 1, bronce: 2 },
+      };
     setCopasSel({
       oro: base.oro || [],
       plata: base.plata || [],
       bronce: base.bronce || [],
     });
+    setCopaMax({
+      oro: Number(base?.cupos?.oro ?? (base.oro?.length || 1)),
+      plata: Number(base?.cupos?.plata ?? (base.plata?.length || 1)),
+      bronce: Number(base?.cupos?.bronce ?? (base.bronce?.length || 2)),
+    });
     setOpenCopasManual(true);
+  };
+
+  // Autorrellenar cupos desde posiciones (según cupo actual)
+  const autoRellenarCopas = () => {
+    const top = posiciones.map((t) => t.id);
+    const oro = top.slice(0, copaMax.oro);
+    const plata = top.slice(copaMax.oro, copaMax.oro + copaMax.plata);
+    const bronce = top.slice(
+      copaMax.oro + copaMax.plata,
+      copaMax.oro + copaMax.plata + copaMax.bronce
+    );
+    setCopasSel({ oro, plata, bronce });
   };
 
   const toggleCopa = (copa, teamId) => {
     setCopasSel((prev) => {
-      // Exclusividad: quitar de otras copas
+      // quitar de todas
       const next = {
         oro: prev.oro.filter((x) => x !== teamId),
         plata: prev.plata.filter((x) => x !== teamId),
         bronce: prev.bronce.filter((x) => x !== teamId),
       };
-      // toggle en copa elegida
+      // agregar/quitar en la elegida
       const arr = new Set(next[copa]);
-      if (arr.has(teamId)) arr.delete(teamId);
-      else arr.add(teamId);
+      arr.has(teamId) ? arr.delete(teamId) : arr.add(teamId);
       next[copa] = Array.from(arr);
       return next;
     });
@@ -602,25 +633,67 @@ export default function Torneo() {
   const guardarCopasManual = async (e) => {
     e.preventDefault();
     if (!canManage) return;
+
     const { oro, plata, bronce } = copasSel;
+    // Validaciones
+    if (
+      oro.length > copaMax.oro ||
+      plata.length > copaMax.plata ||
+      bronce.length > copaMax.bronce
+    ) {
+      return alert('No superes los cupos configurados.');
+    }
     const picks = [...oro, ...plata, ...bronce];
     if (new Set(picks).size !== picks.length)
       return alert('Un equipo no puede estar en más de una copa.');
+
     try {
       await setDoc(doc(db, 'torneos', id, 'fases', 'copas'), {
         oro,
         plata,
         bronce,
+        cupos: { ...copaMax },
         updatedAt: serverTimestamp(),
       });
       setOpenCopasManual(false);
-    } catch (e) {
-      console.error(e);
+    } catch (e2) {
+      console.error('guardarCopasManual error:', e2);
       alert('No se pudo guardar la configuración de copas.');
     }
   };
 
-  // ====== Playoffs ======
+  // Generar mini fixture (ida) para una copa
+  const generarFixtureCopa = async (claveCopa, ids) => {
+    if (!canManage) return;
+    if (!ids || ids.length < 2)
+      return alert('Se necesitan al menos 2 equipos en la copa.');
+
+    // evitar duplicados: borrar previos de esa copa
+    const existentes = fasePartidos.filter((m) => m.fase === claveCopa);
+    await Promise.all(
+      existentes.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
+    );
+
+    // round-robin ida: todos contra todos 1 vez
+    let t = Date.now() + 60 * 60 * 1000;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        await addDoc(collection(db, 'torneos', id, 'partidos'), {
+          localId: ids[i],
+          visitanteId: ids[j],
+          estado: 'pendiente',
+          fase: claveCopa, // 'copa-oro' | 'copa-plata' | 'copa-bronce'
+          dia: new Date(t),
+          cancha: '',
+          createdAt: serverTimestamp(),
+        });
+        t += 60 * 60 * 1000; // +1h para que queden ordenados
+      }
+    }
+    alert('Mini-fixture generado. Completá día y cancha desde la lista.');
+  };
+
+  /* ---------- Playoffs ---------- */
   const seedName = (n) =>
     n === 2
       ? 'final'
@@ -636,7 +709,7 @@ export default function Torneo() {
     const maxN = Math.min(posiciones.length, 16);
     const defaultN = [16, 8, 4, 2].find((k) => k <= maxN) || 2;
     setPoN(defaultN);
-    setPoSeleccion(posiciones.slice(0, defaultN).map((t) => t.id)); // top N por defecto
+    setPoSeleccion(posiciones.slice(0, defaultN).map((t) => t.id));
     setOpenPOConfig(true);
   };
 
@@ -645,22 +718,21 @@ export default function Torneo() {
     if (!canManage) return;
     if (poSeleccion.length !== poN)
       return alert(`Elegí exactamente ${poN} equipos.`);
-    // ordenar seleccionados según ranking actual
     const rankIndex = new Map(posiciones.map((t, i) => [t.id, i]));
     const ordered = poSeleccion
       .slice()
       .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
-    // pares: 1–N, 2–(N-1), ...
     const fase = seedName(poN);
+
     try {
-      // borrar cruces existentes de esa fase si hay
+      // borrar fase existente
       const existentes = fasePartidos.filter((m) => m.fase === fase);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-      // crear nuevos
+      // crear cruces 1–N, 2–(N-1)...
       const baseHora = Date.now() + 60 * 60 * 1000;
       for (let i = 0; i < ordered.length / 2; i++) {
         const L = ordered[i],
@@ -698,7 +770,7 @@ export default function Torneo() {
     }
   };
 
-  // -------------------- RENDER --------------------
+  /* -------------------- RENDER -------------------- */
   const tabs = [
     'fixture',
     'resultados',
@@ -791,7 +863,7 @@ export default function Torneo() {
         </div>
       </div>
 
-      {/* Loading skeleton */}
+      {/* Loading */}
       {loading && (
         <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
           {Array.from({ length: 6 }).map((_, i) => (
@@ -977,7 +1049,8 @@ export default function Torneo() {
               Copas (Oro / Plata / Bronce)
             </h3>
             <p className='text-sm text-gray-600'>
-              El admin puede asignar libremente cuántos equipos van a cada copa.
+              El admin define cupos y equipos por copa. Podés generar un
+              mini-fixture.
             </p>
 
             <div className='mt-3 grid grid-cols-1 md:grid-cols-3 gap-3'>
@@ -1052,12 +1125,84 @@ export default function Torneo() {
                     >
                       Elegir manualmente…
                     </button>
+                    <button
+                      onClick={() =>
+                        generarFixtureCopa('copa-oro', faseCopas?.oro || [])
+                      }
+                      className='mt-2 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Generar mini-fixture (Oro)
+                    </button>
+                    <button
+                      onClick={() =>
+                        generarFixtureCopa('copa-plata', faseCopas?.plata || [])
+                      }
+                      className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Generar mini-fixture (Plata)
+                    </button>
+                    <button
+                      onClick={() =>
+                        generarFixtureCopa(
+                          'copa-bronce',
+                          faseCopas?.bronce || []
+                        )
+                      }
+                      className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Generar mini-fixture (Bronce)
+                    </button>
                   </div>
                 ) : (
                   <div className='text-xs text-gray-500'>Solo admin</div>
                 )}
               </div>
             </div>
+
+            {/* Partidos de copas – visible para todos */}
+            {(cupMatches['copa-oro'].length ||
+              cupMatches['copa-plata'].length ||
+              cupMatches['copa-bronce'].length) && (
+              <div className='mt-4 space-y-4'>
+                {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) =>
+                  cupMatches[ck].length ? (
+                    <div key={ck} className='space-y-2'>
+                      <div className='text-sm font-medium text-gray-700'>
+                        {ck === 'copa-oro'
+                          ? 'Copa Oro'
+                          : ck === 'copa-plata'
+                          ? 'Copa Plata'
+                          : 'Copa Bronce'}
+                      </div>
+                      <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                        {cupMatches[ck].map((p) => (
+                          <MatchRow
+                            key={p.id}
+                            localId={p.localId}
+                            visitanteId={p.visitanteId}
+                            scoreLocal={p.scoreLocal}
+                            scoreVisitante={p.scoreVisitante}
+                            equipos={equipos}
+                            equiposMap={equiposMap}
+                            ts={p.dia}
+                            cancha={p.cancha}
+                            canManage={canManage}
+                            isResult={p.estado === 'finalizado'}
+                            onEditScore={() => openResultado(p)}
+                            onDelete={() => solicitarBorrarPartido(p)}
+                            onRevert={
+                              p.estado === 'finalizado'
+                                ? () => revertirResultado(p.id)
+                                : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null
+                )}
+              </div>
+            )}
           </div>
 
           {/* PLAYOFFS */}
@@ -1134,7 +1279,7 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* ------ MODALES ------ */}
+      {/* =================== MODALES =================== */}
 
       {/* Cargar/Editar resultado */}
       {openResult && editingMatch && canManage && (
@@ -1447,37 +1592,86 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Copas manual (checkboxes) */}
+      {/* Copas manual (cupos + checkboxes) */}
       {openCopasManual && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenCopasManual(false)}
         >
           <div
-            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
               Asignar copas (manual)
             </h3>
+
             <form onSubmit={guardarCopasManual} className='space-y-4'>
+              {/* Cupos */}
+              <div className='rounded-xl border p-3'>
+                <div className='text-sm font-medium mb-2'>Cupos por copa</div>
+                <div className='flex flex-wrap gap-4 items-center'>
+                  {['oro', 'plata', 'bronce'].map((copa) => (
+                    <label
+                      key={`lim-${copa}`}
+                      className='flex items-center gap-2 text-sm'
+                    >
+                      <span className='capitalize w-16'>{copa}</span>
+                      <input
+                        type='number'
+                        min={0}
+                        max={equipos.length}
+                        className='w-24 rounded-xl border px-2 py-1'
+                        value={copaMax[copa]}
+                        onChange={(e) => {
+                          const n = Math.max(
+                            0,
+                            Math.min(
+                              equipos.length,
+                              parseInt(e.target.value, 10) || 0
+                            )
+                          );
+                          setCopaMax((m) => ({ ...m, [copa]: n }));
+                        }}
+                      />
+                    </label>
+                  ))}
+
+                  <button
+                    type='button'
+                    onClick={autoRellenarCopas}
+                    className='ml-auto px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    title='Autorrellenar desde posiciones'
+                  >
+                    Autorrellenar por posiciones
+                  </button>
+                </div>
+              </div>
+
+              {/* Selección de equipos */}
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 {['oro', 'plata', 'bronce'].map((copa) => (
                   <div key={copa} className='rounded-xl border p-3'>
                     <div className='text-sm font-medium mb-2 capitalize'>
                       Copa {copa}
                     </div>
-                    <div className='space-y-1 max-h-64 overflow-auto pr-1'>
+                    <div className='space-y-1 max-h-72 overflow-auto pr-1'>
                       {equipos.map((e) => {
-                        const checked = copasSel[copa].includes(e.id);
+                        const checked = (copasSel[copa] || []).includes(e.id);
+                        const disabled =
+                          !checked &&
+                          (copasSel[copa]?.length || 0) >= (copaMax[copa] || 0);
                         return (
                           <label
                             key={`${copa}-${e.id}`}
-                            className='flex items-center gap-2 text-sm'
+                            className={`flex items-center gap-2 text-sm ${
+                              disabled ? 'opacity-60' : ''
+                            }`}
                           >
                             <input
                               type='checkbox'
                               checked={checked}
+                              disabled={disabled}
                               onChange={() => toggleCopa(copa, e.id)}
                             />
                             <span className='truncate'>{e.nombre}</span>
@@ -1486,7 +1680,8 @@ export default function Torneo() {
                       })}
                     </div>
                     <div className='text-xs text-gray-500 mt-2'>
-                      {copasSel[copa].length} seleccionados
+                      {copasSel[copa]?.length || 0}/{copaMax[copa]}{' '}
+                      seleccionados
                     </div>
                   </div>
                 ))}
