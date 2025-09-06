@@ -315,6 +315,11 @@ export default function Torneo() {
   const [copasSel, setCopasSel] = useState({ oro: [], plata: [], bronce: [] });
   const [copaMax, setCopaMax] = useState({ oro: 1, plata: 1, bronce: 2 });
 
+  /* Modal: crear mini-fixture de copas pidiendo fecha/hora/cancha por partido */
+  const [openCopaModal, setOpenCopaModal] = useState(false);
+  const [copaModalKey, setCopaModalKey] = useState(null); // 'copa-oro' | 'copa-plata' | 'copa-bronce'
+  const [copaModalPairs, setCopaModalPairs] = useState([]); // [{localId, visitanteId, fecha:'', cancha:''}]
+
   /* Fase final – Playoffs */
   const [openPOConfig, setOpenPOConfig] = useState(false);
   const [poN, setPoN] = useState(4); // 2|4|8|16
@@ -557,7 +562,6 @@ export default function Torneo() {
 
   /* ---------- Copas: recomendación y UI ---------- */
   const recomendacionCopas = useMemo(() => {
-    // Sugerencia base: 1º→Oro, 2º→Plata, 3º-4º→Bronce (si existen)
     const ids = posiciones.map((t) => t.id);
     return {
       oro: ids[0] ? [ids[0]] : [],
@@ -616,13 +620,11 @@ export default function Torneo() {
 
   const toggleCopa = (copa, teamId) => {
     setCopasSel((prev) => {
-      // quitar de todas
       const next = {
         oro: prev.oro.filter((x) => x !== teamId),
         plata: prev.plata.filter((x) => x !== teamId),
         bronce: prev.bronce.filter((x) => x !== teamId),
       };
-      // agregar/quitar en la elegida
       const arr = new Set(next[copa]);
       arr.has(teamId) ? arr.delete(teamId) : arr.add(teamId);
       next[copa] = Array.from(arr);
@@ -635,7 +637,6 @@ export default function Torneo() {
     if (!canManage) return;
 
     const { oro, plata, bronce } = copasSel;
-    // Validaciones
     if (
       oro.length > copaMax.oro ||
       plata.length > copaMax.plata ||
@@ -662,35 +663,72 @@ export default function Torneo() {
     }
   };
 
-  // Generar mini fixture (ida) para una copa
-  const generarFixtureCopa = async (claveCopa, ids) => {
+  // Abrir modal para crear fixture de copa solicitando fecha/hora/cancha por partido
+  const abrirModalFixtureCopa = (claveCopa, ids) => {
     if (!canManage) return;
     if (!ids || ids.length < 2)
       return alert('Se necesitan al menos 2 equipos en la copa.');
-
-    // evitar duplicados: borrar previos de esa copa
-    const existentes = fasePartidos.filter((m) => m.fase === claveCopa);
-    await Promise.all(
-      existentes.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
-    );
-
-    // round-robin ida: todos contra todos 1 vez
-    let t = Date.now() + 60 * 60 * 1000;
+    const pairs = [];
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
-        await addDoc(collection(db, 'torneos', id, 'partidos'), {
+        pairs.push({
           localId: ids[i],
           visitanteId: ids[j],
-          estado: 'pendiente',
-          fase: claveCopa, // 'copa-oro' | 'copa-plata' | 'copa-bronce'
-          dia: new Date(t),
+          fecha: '',
           cancha: '',
-          createdAt: serverTimestamp(),
         });
-        t += 60 * 60 * 1000; // +1h para que queden ordenados
       }
     }
-    alert('Mini-fixture generado. Completá día y cancha desde la lista.');
+    setCopaModalKey(claveCopa);
+    setCopaModalPairs(pairs);
+    setOpenCopaModal(true);
+  };
+
+  const guardarFixtureCopaConDetalles = async (e) => {
+    e.preventDefault();
+    if (!canManage) return;
+    if (!copaModalKey || !copaModalPairs.length) return;
+
+    // Validar que todas tengan fecha y cancha
+    for (const p of copaModalPairs) {
+      if (!p.fecha)
+        return alert('Completá fecha y hora en todos los partidos.');
+      if (!p.cancha?.trim())
+        return alert('Completá la cancha en todos los partidos.');
+    }
+
+    try {
+      // borrar previos de esa copa para evitar duplicados
+      const existentes = fasePartidos.filter((m) => m.fase === copaModalKey);
+      await Promise.all(
+        existentes.map((m) =>
+          deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
+        )
+      );
+
+      // crear todos
+      await Promise.all(
+        copaModalPairs.map((p) =>
+          addDoc(collection(db, 'torneos', id, 'partidos'), {
+            localId: p.localId,
+            visitanteId: p.visitanteId,
+            estado: 'pendiente',
+            fase: copaModalKey,
+            dia: new Date(p.fecha),
+            cancha: p.cancha.trim(),
+            createdAt: serverTimestamp(),
+          })
+        )
+      );
+
+      setOpenCopaModal(false);
+      setCopaModalKey(null);
+      setCopaModalPairs([]);
+      alert('Mini-fixture de copa creado.');
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo crear el mini-fixture.');
+    }
   };
 
   /* ---------- Playoffs ---------- */
@@ -725,14 +763,12 @@ export default function Torneo() {
     const fase = seedName(poN);
 
     try {
-      // borrar fase existente
       const existentes = fasePartidos.filter((m) => m.fase === fase);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-      // crear cruces 1–N, 2–(N-1)...
       const baseHora = Date.now() + 60 * 60 * 1000;
       for (let i = 0; i < ordered.length / 2; i++) {
         const L = ordered[i],
@@ -1127,7 +1163,7 @@ export default function Torneo() {
                     </button>
                     <button
                       onClick={() =>
-                        generarFixtureCopa('copa-oro', faseCopas?.oro || [])
+                        abrirModalFixtureCopa('copa-oro', faseCopas?.oro || [])
                       }
                       className='mt-2 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                     >
@@ -1135,7 +1171,10 @@ export default function Torneo() {
                     </button>
                     <button
                       onClick={() =>
-                        generarFixtureCopa('copa-plata', faseCopas?.plata || [])
+                        abrirModalFixtureCopa(
+                          'copa-plata',
+                          faseCopas?.plata || []
+                        )
                       }
                       className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                     >
@@ -1143,7 +1182,7 @@ export default function Torneo() {
                     </button>
                     <button
                       onClick={() =>
-                        generarFixtureCopa(
+                        abrirModalFixtureCopa(
                           'copa-bronce',
                           faseCopas?.bronce || []
                         )
@@ -1509,7 +1548,7 @@ export default function Torneo() {
               <div>
                 <label className='text-sm'>Logo (URL opcional)</label>
                 <input
-                  className='mt-1 w-full rounded-xl border px-3 py-2'
+                  className='mt-1 w-full rounded-2xl border px-3 py-2'
                   placeholder='https://…  o  /logos/tigres.png'
                   value={teamForm.logoUrl}
                   onChange={(e) =>
@@ -1636,7 +1675,6 @@ export default function Torneo() {
                       />
                     </label>
                   ))}
-
                   <button
                     type='button'
                     onClick={autoRellenarCopas}
@@ -1700,6 +1738,93 @@ export default function Torneo() {
                   className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                 >
                   Guardar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Mini-fixture de Copas (con fecha/hora/cancha por partido) */}
+      {openCopaModal && canManage && (
+        <div
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+          onClick={() => setOpenCopaModal(false)}
+        >
+          <div
+            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className='text-lg font-semibold mb-3'>
+              Mini-fixture{' '}
+              {copaModalKey === 'copa-oro'
+                ? 'Copa Oro'
+                : copaModalKey === 'copa-plata'
+                ? 'Copa Plata'
+                : 'Copa Bronce'}
+            </h3>
+            <form
+              onSubmit={guardarFixtureCopaConDetalles}
+              className='space-y-3'
+            >
+              {copaModalPairs.map((p, idx) => (
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='text-sm font-medium mb-2'>
+                    {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
+                  </div>
+                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                    <div>
+                      <label className='text-sm'>Fecha & hora</label>
+                      <input
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        value={p.fecha}
+                        onChange={(e) =>
+                          setCopaModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = { ...copy[idx], fecha: e.target.value };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
+                    </div>
+                    <div className='md:col-span-2'>
+                      <label className='text-sm'>Cancha</label>
+                      <input
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
+                        value={p.cancha}
+                        onChange={(e) =>
+                          setCopaModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = {
+                              ...copy[idx],
+                              cancha: e.target.value,
+                            };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className='flex items-center justify-end gap-2 pt-2'>
+                <button
+                  type='button'
+                  onClick={() => setOpenCopaModal(false)}
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+                >
+                  Cancelar
+                </button>
+                <button
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
+                >
+                  Crear partidos
                 </button>
               </div>
             </form>
