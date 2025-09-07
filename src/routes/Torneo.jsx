@@ -83,6 +83,80 @@ const IconPlus = (p) => (
   </svg>
 );
 
+/* ---------- Helpers visuales Fase Final ---------- */
+const IconTrophy = (p) => (
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
+    <path
+      fill='currentColor'
+      d='M6 2h12v2h3v3a5 5 0 0 1-5 5c-.9 1.2-2.2 2-3.7 2.4V17h3v2H8v-2h3.7v-2.6C10.2 12 8.9 11.2 8 10A5 5 0 0 1 3 7V4h3V2zm13 4v1a3 3 0 0 1-3 3V4h3v2zM5 6V4h3v6A3 3 0 0 1 5 7V6z'
+    />
+  </svg>
+);
+const IconBracket = (p) => (
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
+    <path
+      fill='currentColor'
+      d='M5 4h4v2H7v12h2v2H5V4zm10 0h4v16h-4v-2h2V6h-2V4z'
+    />
+  </svg>
+);
+
+const CupTag = ({ tipo }) => {
+  const map = {
+    'copa-oro': 'bg-amber-100 text-amber-700 border-amber-200',
+    'copa-plata': 'bg-slate-100 text-slate-700 border-slate-200',
+    'copa-bronce': 'bg-orange-100 text-orange-700 border-orange-200',
+  };
+  const label =
+    tipo === 'copa-oro'
+      ? 'Copa Oro'
+      : tipo === 'copa-plata'
+      ? 'Copa Plata'
+      : 'Copa Bronce';
+  return (
+    <span
+      className={`inline-flex items-center gap-2 px-2 py-1 rounded-full border text-xs font-medium ${map[tipo]}`}
+    >
+      <IconTrophy /> {label}
+    </span>
+  );
+};
+
+const StageBadge = ({ fase }) => {
+  const text =
+    {
+      final: 'Final',
+      semi: 'Semifinales',
+      cuartos: 'Cuartos',
+      octavos: 'Octavos',
+    }[fase] || fase;
+  return (
+    <span className='inline-block px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-medium border border-indigo-100'>
+      {text}
+    </span>
+  );
+};
+
+const FancyPanel = ({ icon, title, subtitle, right, children }) => (
+  <div className='rounded-2xl border shadow-sm bg-white overflow-hidden'>
+    <div className='p-[1px] bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300'>
+      <div className='flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3'>
+        <div className='flex items-center gap-2'>
+          <div className='rounded-xl bg-gray-900 text-white p-2'>{icon}</div>
+          <div>
+            <div className='font-semibold leading-tight'>{title}</div>
+            {subtitle && (
+              <div className='text-xs text-gray-500'>{subtitle}</div>
+            )}
+          </div>
+        </div>
+        {right}
+      </div>
+    </div>
+    <div className='p-4'>{children}</div>
+  </div>
+);
+
 /* Avatar / EquipoTag */
 const initials = (name = '') =>
   name
@@ -183,7 +257,7 @@ function buildTable(partidosFinalizados, equiposMap) {
   );
 }
 
-/* Fila partido (acciones abajo) */
+/* Fila partido */
 function MatchRow({
   localId,
   visitanteId,
@@ -285,7 +359,7 @@ export default function Torneo() {
   const [equipos, setEquipos] = useState([]);
   const [partidos, setPartidos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('fixture'); // 'fase' solo si hay fases o es admin
+  const [tab, setTab] = useState('fixture');
 
   /* Resultado (modal) */
   const [openResult, setOpenResult] = useState(false);
@@ -327,18 +401,18 @@ export default function Torneo() {
   const [openPOConfig, setOpenPOConfig] = useState(false);
   const [poN, setPoN] = useState(4); // 2|4|8|16
   const [poSeleccion, setPoSeleccion] = useState([]);
-
-  /* Modal: programar cruces de playoffs */
+  // Modal de detalles (día/hora/cancha) para los cruces de playoffs
   const [openPOModal, setOpenPOModal] = useState(false);
-  const [poModalFase, setPoModalFase] = useState('otros'); // 'final'|'semi'|'cuartos'|'octavos'
-  const [poModalPairs, setPoModalPairs] = useState([]); // [{localId,visitanteId,fecha,cancha}]
+  const [poFaseKey, setPoFaseKey] = useState(null); // 'final'|'semi'|'cuartos'|'octavos'
+  const [poPairs, setPoPairs] = useState([]); // [{localId, visitanteId, fecha, cancha}]
 
   /* Permisos */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       try {
         setAdmin(await isAdmin(u?.email));
-      } catch {
+      } catch (err) {
+        console.debug('isAdmin falló o no hay usuario', err);
         setAdmin(false);
       }
     });
@@ -421,7 +495,7 @@ export default function Torneo() {
       .map((k) => ({ dateKey: k, matches: byDate[k] }));
   }, [fixture]);
 
-  /* Derivados: fases (playoffs/copas) */
+  /* Derivados: fases */
   const fasePartidos = useMemo(
     () => partidos.filter((p) => p.fase),
     [partidos]
@@ -444,7 +518,6 @@ export default function Torneo() {
       .map((k) => ({ fase: k, matches: map[k] }));
   }, [fasePartidos]);
 
-  /* Partidos de copas (mini fixture ya creado) */
   const cupMatches = useMemo(() => {
     const out = { 'copa-oro': [], 'copa-plata': [], 'copa-bronce': [] };
     for (const m of fasePartidos) {
@@ -593,10 +666,7 @@ export default function Torneo() {
     try {
       await deleteDoc(doc(db, 'torneos', id, 'fases', 'copas'));
     } catch (err) {
-      console.debug(
-        'Ignorado al borrar fases/copas:',
-        err?.code || err?.message || err
-      );
+      console.debug('Ignorado al borrar doc de copas:', err);
     }
   };
   const cambiarModo = async (nuevo) => {
@@ -695,7 +765,6 @@ export default function Torneo() {
     setOpenCopasManual(true);
   };
 
-  // Autorrellenar cupos desde posiciones (según cupo actual)
   const autoRellenarCopas = () => {
     const top = posiciones.map((t) => t.id);
     const oro = top.slice(0, copaMax.oro);
@@ -709,13 +778,11 @@ export default function Torneo() {
 
   const toggleCopa = (copa, teamId) => {
     setCopasSel((prev) => {
-      // quitar de todas
       const next = {
         oro: prev.oro.filter((x) => x !== teamId),
         plata: prev.plata.filter((x) => x !== teamId),
         bronce: prev.bronce.filter((x) => x !== teamId),
       };
-      // agregar/quitar en la elegida
       const arr = new Set(next[copa]);
       arr.has(teamId) ? arr.delete(teamId) : arr.add(teamId);
       next[copa] = Array.from(arr);
@@ -732,14 +799,12 @@ export default function Torneo() {
       );
 
     const { oro, plata, bronce } = copasSel;
-    // Validaciones
     if (
       oro.length > copaMax.oro ||
       plata.length > copaMax.plata ||
       bronce.length > copaMax.bronce
-    ) {
+    )
       return alert('No superes los cupos configurados.');
-    }
     const picks = [...oro, ...plata, ...bronce];
     if (new Set(picks).size !== picks.length)
       return alert('Un equipo no puede estar en más de una copa.');
@@ -759,7 +824,6 @@ export default function Torneo() {
     }
   };
 
-  // Abrir modal para programar mini-fixture de una copa
   const abrirModalFixtureCopa = (claveCopa, ids) => {
     if (!canManage) return;
     if (modoFase !== 'copas')
@@ -768,7 +832,6 @@ export default function Torneo() {
       );
     if (!ids || ids.length < 2)
       return alert('Se necesitan al menos 2 equipos en la copa.');
-
     const pairs = [];
     for (let i = 0; i < ids.length; i++)
       for (let j = i + 1; j < ids.length; j++)
@@ -778,7 +841,6 @@ export default function Torneo() {
           fecha: '',
           cancha: '',
         });
-
     setCopaModalKey(claveCopa);
     setCopaModalPairs(pairs);
     setOpenCopaModal(true);
@@ -801,22 +863,19 @@ export default function Torneo() {
     }
 
     try {
-      // evitar duplicados: borrar previos de esa copa
       const existentes = fasePartidos.filter((m) => m.fase === copaModalKey);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-
-      // crear
       await Promise.all(
         copaModalPairs.map((p) =>
           addDoc(collection(db, 'torneos', id, 'partidos'), {
             localId: p.localId,
             visitanteId: p.visitanteId,
             estado: 'pendiente',
-            fase: copaModalKey, // 'copa-oro'|'copa-plata'|'copa-bronce'
+            fase: copaModalKey,
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
             createdAt: serverTimestamp(),
@@ -858,22 +917,6 @@ export default function Torneo() {
     setOpenPOConfig(true);
   };
 
-  const abrirProgramarCruces = (fase, orderedIds) => {
-    // genera pares 1–N, 2–(N-1), etc.
-    const pairs = [];
-    for (let i = 0; i < Math.floor(orderedIds.length / 2); i++) {
-      pairs.push({
-        localId: orderedIds[i],
-        visitanteId: orderedIds[orderedIds.length - 1 - i],
-        fecha: '',
-        cancha: '',
-      });
-    }
-    setPoModalFase(fase);
-    setPoModalPairs(pairs);
-    setOpenPOModal(true);
-  };
-
   const guardarPOConfig = async (e) => {
     e.preventDefault();
     if (!canManage) return;
@@ -890,51 +933,57 @@ export default function Torneo() {
       .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
     const fase = seedName(poN);
 
-    // En lugar de crear directo, abrimos modal para programar (fecha/cancha)
-    abrirProgramarCruces(fase, ordered);
+    // En lugar de crear directamente, abrimos el modal para completar fecha/hora/cancha
+    const pairs = [];
+    for (let i = 0; i < ordered.length / 2; i++) {
+      const L = ordered[i],
+        V = ordered[ordered.length - 1 - i];
+      pairs.push({ localId: L, visitanteId: V, fecha: '', cancha: '' });
+    }
+    setPoFaseKey(fase);
+    setPoPairs(pairs);
     setOpenPOConfig(false);
+    setOpenPOModal(true);
   };
 
-  const guardarCrucesPlayoffs = async (e) => {
+  const guardarPlayoffsConDetalles = async (e) => {
     e.preventDefault();
     if (!canManage) return;
-    if (modoFase !== 'playoffs')
-      return alert('El modo activo es Copas. Cambiá a Playoffs.');
+    if (modoFase !== 'playoffs') return alert('El modo activo es Copas.');
+    if (!poFaseKey || !poPairs.length) return;
 
-    if (!poModalPairs.length) return;
-    for (const p of poModalPairs) {
+    for (const p of poPairs) {
       if (!p.fecha) return alert('Completá fecha y hora en todos los cruces.');
       if (!p.cancha?.trim())
         return alert('Completá la cancha en todos los cruces.');
     }
 
     try {
-      // borrar fase existente
-      const existentes = fasePartidos.filter((m) => m.fase === poModalFase);
+      // borrar existentes de esta fase (si los hay)
+      const existentes = fasePartidos.filter((m) => m.fase === poFaseKey);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-
-      // crear
+      // crear cruces con detalles
       await Promise.all(
-        poModalPairs.map((p) =>
+        poPairs.map((p) =>
           addDoc(collection(db, 'torneos', id, 'partidos'), {
             localId: p.localId,
             visitanteId: p.visitanteId,
             estado: 'pendiente',
-            fase: poModalFase,
+            fase: poFaseKey,
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
             createdAt: serverTimestamp(),
           })
         )
       );
-
       setOpenPOModal(false);
-      setPoModalPairs([]);
-      alert('Cruces creados.');
+      setPoFaseKey(null);
+      setPoPairs([]);
+      alert('Cruces de playoffs creados.');
     } catch (e2) {
       console.error(e2);
       alert('No se pudieron crear los cruces.');
@@ -1066,68 +1115,73 @@ export default function Torneo() {
       {/* FIXTURE */}
       {!loading && tab === 'fixture' && (
         <div className='space-y-4'>
-          {fixtureGrouped.length === 0 && (
-            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
-              <div className='text-4xl mb-2'>📅</div>
-              <p className='text-gray-600'>No hay partidos próximos.</p>
-            </div>
-          )}
-
-          {fixtureGrouped.map(({ dateKey, matches }) => (
-            <div key={dateKey} className='space-y-2'>
-              <div className='text-sm text-gray-500'>
-                {dateKey === 'Sin fecha'
-                  ? 'Sin fecha'
-                  : new Date(dateKey).toLocaleDateString()}
+          {(() => {
+            const byDate = fixtureGrouped;
+            if (byDate.length === 0) {
+              return (
+                <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
+                  <div className='text-4xl mb-2'>📅</div>
+                  <p className='text-gray-600'>No hay partidos próximos.</p>
+                </div>
+              );
+            }
+            return byDate.map(({ dateKey, matches }) => (
+              <div key={dateKey} className='space-y-2'>
+                <div className='text-sm text-gray-500'>
+                  {dateKey === 'Sin fecha'
+                    ? 'Sin fecha'
+                    : new Date(dateKey).toLocaleDateString()}
+                </div>
+                <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                  {matches.map((p) => (
+                    <MatchRow
+                      key={p.id}
+                      localId={p.localId}
+                      visitanteId={p.visitanteId}
+                      equipos={equipos}
+                      equiposMap={equiposMap}
+                      ts={p.dia}
+                      cancha={p.cancha}
+                      canManage={canManage}
+                      onEditScore={() => openResultado(p)}
+                      onDelete={() => solicitarBorrarPartido(p)}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                {matches.map((p) => (
-                  <MatchRow
-                    key={p.id}
-                    localId={p.localId}
-                    visitanteId={p.visitanteId}
-                    equipos={equipos}
-                    equiposMap={equiposMap}
-                    ts={p.dia}
-                    cancha={p.cancha}
-                    canManage={canManage}
-                    onEditScore={() => openResultado(p)}
-                    onDelete={() => solicitarBorrarPartido(p)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+            ));
+          })()}
         </div>
       )}
 
       {/* RESULTADOS */}
       {!loading && tab === 'resultados' && (
         <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-          {resultados.length === 0 && (
+          {resultados.length === 0 ? (
             <div className='col-span-full text-center bg-white border rounded-2xl p-8 shadow-sm'>
               <div className='text-4xl mb-2'>🏀</div>
               <p className='text-gray-600'>Todavía no hay resultados.</p>
             </div>
+          ) : (
+            resultados.map((p) => (
+              <MatchRow
+                key={p.id}
+                localId={p.localId}
+                visitanteId={p.visitanteId}
+                scoreLocal={p.scoreLocal}
+                scoreVisitante={p.scoreVisitante}
+                equipos={equipos}
+                equiposMap={equiposMap}
+                ts={p.dia}
+                cancha={p.cancha}
+                canManage={canManage}
+                isResult
+                onEditScore={() => openResultado(p)}
+                onDelete={() => solicitarBorrarPartido(p)}
+                onRevert={() => revertirResultado(p.id)}
+              />
+            ))
           )}
-          {resultados.map((p) => (
-            <MatchRow
-              key={p.id}
-              localId={p.localId}
-              visitanteId={p.visitanteId}
-              scoreLocal={p.scoreLocal}
-              scoreVisitante={p.scoreVisitante}
-              equipos={equipos}
-              equiposMap={equiposMap}
-              ts={p.dia}
-              cancha={p.cancha}
-              canManage={canManage}
-              isResult
-              onEditScore={() => openResultado(p)}
-              onDelete={() => solicitarBorrarPartido(p)}
-              onRevert={() => revertirResultado(p.id)}
-            />
-          ))}
         </div>
       )}
 
@@ -1229,185 +1283,129 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* FASE FINAL */}
+      {/* FASE FINAL (bonita) */}
       {!loading && tab === 'fase' && (
-        <div className='space-y-3'>
-          {/* Selector de modo (solo admin; invitados NO ven nada) */}
+        <div className='space-y-4'>
+          {/* Selector de modo (solo admin; invitado NO ve nada) */}
           {canManage && (
-            <div className='rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap'>
-              <div className='font-semibold'>Modo de fase:</div>
-              <div className='flex items-center gap-2'>
-                <button
-                  className={`px-3 py-2 rounded-xl border ${
-                    modoFase === 'copas'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white hover:bg-gray-50'
-                  }`}
-                  onClick={() => cambiarModo('copas')}
-                >
-                  Copas
-                </button>
-                <button
-                  className={`px-3 py-2 rounded-xl border ${
-                    modoFase === 'playoffs'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white hover:bg-gray-50'
-                  }`}
-                  onClick={() => cambiarModo('playoffs')}
-                >
-                  Playoffs
-                </button>
-              </div>
+            <FancyPanel
+              icon={<IconTrophy />}
+              title='Fase final'
+              subtitle='Elegí si se define por Copas o Playoffs'
+              right={
+                <div className='flex items-center gap-2'>
+                  <button
+                    className={`px-3 py-2 rounded-xl border text-sm ${
+                      modoFase === 'copas'
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-white hover:bg-gray-50'
+                    }`}
+                    onClick={() => cambiarModo('copas')}
+                  >
+                    Copas
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-xl border text-sm ${
+                      modoFase === 'playoffs'
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-white hover:bg-gray-50'
+                    }`}
+                    onClick={() => cambiarModo('playoffs')}
+                  >
+                    Playoffs
+                  </button>
+                </div>
+              }
+            >
               {!modoFase && (
                 <div className='text-sm text-gray-600'>
-                  Elegí un modo para empezar.
+                  Seleccioná un modo para configurar la fase final.
                 </div>
               )}
-            </div>
+            </FancyPanel>
           )}
 
-          {/* Panel COPAS */}
+          {/* ---- Panel COPAS ---- */}
           {modoFase === 'copas' && (
-            <div className='rounded-2xl bg-white p-4 shadow-sm border'>
-              <h3 className='font-semibold text-lg'>
-                Copas (Oro / Plata / Bronce)
-              </h3>
-              <p className='text-sm text-gray-600'>
-                {canManage
-                  ? 'Definí cupos y equipos por copa. Podés generar un mini-fixture con fecha/hora/cancha.'
-                  : 'Vista de copas y partidos programados.'}
-              </p>
-
-              <div
-                className={`mt-3 grid grid-cols-1 ${
-                  canManage ? 'md:grid-cols-3' : 'md:grid-cols-1'
-                } gap-3`}
-              >
-                {/* Actual */}
-                <div className='rounded-xl border p-3'>
-                  <div className='text-sm font-medium mb-2'>Actual</div>
-                  {!faseCopas ? (
-                    <div className='text-xs text-gray-500'>Sin asignar</div>
-                  ) : (
-                    <div className='space-y-2 text-sm'>
-                      <div>
-                        <b>Oro:</b>{' '}
-                        {(faseCopas.oro || [])
-                          .map((id) => equiposMap[id])
-                          .join(', ') || '-'}
-                      </div>
-                      <div>
-                        <b>Plata:</b>{' '}
-                        {(faseCopas.plata || [])
-                          .map((id) => equiposMap[id])
-                          .join(', ') || '-'}
-                      </div>
-                      <div>
-                        <b>Bronce:</b>{' '}
-                        {(faseCopas.bronce || [])
-                          .map((id) => equiposMap[id])
-                          .join(', ') || '-'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Sugerencia (solo admin) */}
-                {canManage && (
-                  <div className='rounded-xl border p-3'>
-                    <div className='text-sm font-medium mb-2'>Sugerencia</div>
-                    <div className='space-y-2 text-sm'>
-                      <div>
-                        <b>Oro:</b>{' '}
-                        {(recomendacionCopas.oro || [])
-                          .map((id) => equiposMap[id])
-                          .join(', ') || '-'}
-                      </div>
-                      <div>
-                        <b>Plata:</b>{' '}
-                        {(recomendacionCopas.plata || [])
-                          .map((id) => equiposMap[id])
-                          .join(', ') || '-'}
-                      </div>
-                      <div>
-                        <b>Bronce:</b>{' '}
-                        {(recomendacionCopas.bronce || [])
-                          .map((id) => equiposMap[id])
-                          .join(', ') || '-'}
-                      </div>
-                    </div>
+            <FancyPanel
+              icon={<IconTrophy />}
+              title='Copas · Oro / Plata / Bronce'
+              subtitle={
+                canManage
+                  ? 'Definí cupos, asigná equipos y generá el mini-fixture'
+                  : 'Resumen y partidos de las copas'
+              }
+              right={
+                canManage ? (
+                  <div className='flex flex-wrap gap-2'>
+                    <button
+                      onClick={asignarCopasAuto}
+                      className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black text-sm'
+                    >
+                      Asignar recomendación
+                    </button>
+                    <button
+                      onClick={abrirCopasManual}
+                      className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50 text-sm'
+                    >
+                      Elegir manualmente…
+                    </button>
                   </div>
-                )}
-
-                {/* Acciones (solo admin) */}
-                {canManage && (
-                  <div className='rounded-xl border p-3'>
-                    <div className='text-sm font-medium mb-2'>Acciones</div>
-                    <div className='flex flex-col gap-2'>
-                      <button
-                        onClick={asignarCopasAuto}
-                        className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
-                      >
-                        Asignar recomendación
-                      </button>
-                      <button
-                        onClick={abrirCopasManual}
-                        className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
-                      >
-                        Elegir manualmente…
-                      </button>
-                      <button
-                        onClick={() =>
-                          abrirModalFixtureCopa(
-                            'copa-oro',
-                            faseCopas?.oro || []
-                          )
-                        }
-                        className='mt-2 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                      >
-                        Generar mini-fixture (Oro)
-                      </button>
-                      <button
-                        onClick={() =>
-                          abrirModalFixtureCopa(
-                            'copa-plata',
-                            faseCopas?.plata || []
-                          )
-                        }
-                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                      >
-                        Generar mini-fixture (Plata)
-                      </button>
-                      <button
-                        onClick={() =>
-                          abrirModalFixtureCopa(
-                            'copa-bronce',
-                            faseCopas?.bronce || []
-                          )
-                        }
-                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                      >
-                        Generar mini-fixture (Bronce)
-                      </button>
+                ) : null
+              }
+            >
+              {/* Resumen copas */}
+              <div className='grid grid-cols-1 md:grid-cols-3 gap-3 mb-4'>
+                {['oro', 'plata', 'bronce'].map((k) => {
+                  const ids = faseCopas?.[k] || [];
+                  const key =
+                    k === 'oro'
+                      ? 'copa-oro'
+                      : k === 'plata'
+                      ? 'copa-plata'
+                      : 'copa-bronce';
+                  return (
+                    <div key={k} className='rounded-xl border p-3 bg-white'>
+                      <div className='flex items-center justify-between mb-1'>
+                        <CupTag tipo={key} />
+                        <span className='text-xs text-gray-500'>
+                          {ids.length} equipos
+                        </span>
+                      </div>
+                      <div className='text-sm text-gray-700 min-h-[1.5rem]'>
+                        {ids.length ? (
+                          ids.map((id2) => equiposMap[id2]).join(', ')
+                        ) : (
+                          <span className='text-gray-400'>Sin asignar</span>
+                        )}
+                      </div>
+                      {canManage && ids.length >= 2 && (
+                        <button
+                          onClick={() => abrirModalFixtureCopa(key, ids)}
+                          className='mt-3 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        >
+                          Generar mini-fixture
+                        </button>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
 
-              {/* Partidos de copas – visible para todos */}
-              {(cupMatches['copa-oro'].length ||
-                cupMatches['copa-plata'].length ||
-                cupMatches['copa-bronce'].length) && (
-                <div className='mt-4 space-y-4'>
+              {/* Partidos de copas (ordenados por copa) */}
+              {cupMatches['copa-oro'].length ||
+              cupMatches['copa-plata'].length ||
+              cupMatches['copa-bronce'].length ? (
+                <div className='space-y-5'>
                   {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) =>
                     cupMatches[ck].length ? (
                       <div key={ck} className='space-y-2'>
-                        <div className='text-sm font-medium text-gray-700'>
-                          {ck === 'copa-oro'
-                            ? 'Copa Oro'
-                            : ck === 'copa-plata'
-                            ? 'Copa Plata'
-                            : 'Copa Bronce'}
+                        <div className='flex items-center justify-between'>
+                          <CupTag tipo={ck} />
+                          <span className='text-xs text-gray-500'>
+                            {cupMatches[ck].length} partido
+                            {cupMatches[ck].length > 1 ? 's' : ''}
+                          </span>
                         </div>
                         <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                           {cupMatches[ck].map((p) => (
@@ -1423,10 +1421,12 @@ export default function Torneo() {
                               cancha={p.cancha}
                               canManage={canManage}
                               isResult={p.estado === 'finalizado'}
-                              onEditScore={() => openResultado(p)}
-                              onDelete={() => solicitarBorrarPartido(p)}
+                              onEditScore={() => canManage && openResultado(p)}
+                              onDelete={() =>
+                                canManage && solicitarBorrarPartido(p)
+                              }
                               onRevert={
-                                p.estado === 'finalizado'
+                                p.estado === 'finalizado' && canManage
                                   ? () => revertirResultado(p.id)
                                   : undefined
                               }
@@ -1437,53 +1437,60 @@ export default function Torneo() {
                     ) : null
                   )}
                 </div>
+              ) : (
+                <div className='text-sm text-gray-500'>
+                  No hay partidos de copas aún.
+                </div>
               )}
-            </div>
+            </FancyPanel>
           )}
 
-          {/* Panel PLAYOFFS */}
+          {/* ---- Panel PLAYOFFS ---- */}
           {modoFase === 'playoffs' && (
-            <div className='rounded-2xl bg-white p-4 shadow-sm border'>
-              <div className='flex items-center justify-between'>
-                <div>
-                  <h3 className='font-semibold text-lg'>Playoffs</h3>
-                  <p className='text-sm text-gray-600'>
-                    {canManage
-                      ? 'Elegí cuántos entran (2, 4, 8, 16), seleccioná y programá cada cruce.'
-                      : 'Cruces de play-offs.'}
-                  </p>
-                </div>
-                {canManage && (
+            <FancyPanel
+              icon={<IconBracket />}
+              title='Playoffs'
+              subtitle={
+                canManage
+                  ? 'Elegí participantes y definí cruces con día, hora y cancha'
+                  : 'Cruces y resultados'
+              }
+              right={
+                canManage ? (
                   <div className='flex gap-2'>
                     <button
                       onClick={abrirPOConfig}
-                      className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
+                      className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-sm'
                     >
                       <IconPlus /> Generar
                     </button>
                     {fasePartidos.length > 0 && (
                       <button
                         onClick={borrarCrucesFaseFinal}
-                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
                         Borrar cruces
                       </button>
                     )}
                   </div>
-                )}
-              </div>
-
+                ) : null
+              }
+            >
               {faseGrouped.length === 0 ? (
-                <div className='text-center bg-white border rounded-2xl p-8 shadow-sm mt-3'>
+                <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
                   <div className='text-4xl mb-2'>🏆</div>
                   <p className='text-gray-600'>Aún no hay cruces.</p>
                 </div>
               ) : (
-                <div className='mt-3 space-y-4'>
+                <div className='space-y-5'>
                   {faseGrouped.map(({ fase, matches }) => (
                     <div key={fase} className='space-y-2'>
-                      <div className='text-sm font-medium text-gray-700'>
-                        {faseLabels[fase] || fase}
+                      <div className='flex items-center justify-between'>
+                        <StageBadge fase={fase} />
+                        <span className='text-xs text-gray-500'>
+                          {matches.length} partido
+                          {matches.length > 1 ? 's' : ''}
+                        </span>
                       </div>
                       <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                         {matches.map((p) => (
@@ -1499,10 +1506,12 @@ export default function Torneo() {
                             cancha={p.cancha}
                             canManage={canManage}
                             isResult={p.estado === 'finalizado'}
-                            onEditScore={() => openResultado(p)}
-                            onDelete={() => solicitarBorrarPartido(p)}
+                            onEditScore={() => canManage && openResultado(p)}
+                            onDelete={() =>
+                              canManage && solicitarBorrarPartido(p)
+                            }
                             onRevert={
-                              p.estado === 'finalizado'
+                              p.estado === 'finalizado' && canManage
                                 ? () => revertirResultado(p.id)
                                 : undefined
                             }
@@ -1513,6 +1522,13 @@ export default function Torneo() {
                   ))}
                 </div>
               )}
+            </FancyPanel>
+          )}
+
+          {/* Si no hay modo elegido y el usuario no es admin, mostramos un cartel neutro */}
+          {!modoFase && !canManage && (
+            <div className='rounded-2xl bg-white p-6 shadow-sm border text-center text-gray-600'>
+              Próximamente: definición de la fase final.
             </div>
           )}
         </div>
@@ -1527,7 +1543,7 @@ export default function Torneo() {
           onClick={closeResultado}
         >
           <div
-            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Cargar resultado</h3>
@@ -1605,14 +1621,14 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Nuevo partido (fase regular) */}
+      {/* Nuevo partido */}
       {openMatch && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenMatch(false)}
         >
           <div
-            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Nuevo partido</h3>
@@ -1711,7 +1727,7 @@ export default function Torneo() {
           onClick={() => setOpenTeam(false)}
         >
           <div
-            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Nuevo equipo</h3>
@@ -1787,7 +1803,7 @@ export default function Torneo() {
           onClick={cancelarBorrarPartido}
         >
           <div
-            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -1831,14 +1847,14 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Copas manual (cupos + checkboxes) */}
+      {/* Copas manual */}
       {openCopasManual && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenCopasManual(false)}
         >
           <div
-            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[80vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -1846,7 +1862,6 @@ export default function Torneo() {
             </h3>
 
             <form onSubmit={guardarCopasManual} className='space-y-4'>
-              {/* Cupos */}
               <div className='rounded-xl border p-3'>
                 <div className='text-sm font-medium mb-2'>Cupos por copa</div>
                 <div className='flex flex-wrap gap-4 items-center'>
@@ -1875,7 +1890,6 @@ export default function Torneo() {
                       />
                     </label>
                   ))}
-
                   <button
                     type='button'
                     onClick={autoRellenarCopas}
@@ -1887,7 +1901,6 @@ export default function Torneo() {
                 </div>
               </div>
 
-              {/* Selección de equipos */}
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 {['oro', 'plata', 'bronce'].map((copa) => (
                   <div key={copa} className='rounded-xl border p-3'>
@@ -1953,7 +1966,7 @@ export default function Torneo() {
           onClick={() => setOpenCopaModal(false)}
         >
           <div
-            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[80vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -2033,14 +2046,14 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Playoffs: seleccionar equipos */}
+      {/* Playoffs: selección (quiénes entran) */}
       {openPOConfig && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenPOConfig(false)}
         >
           <div
-            className='w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[80vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Generar playoffs</h3>
@@ -2167,22 +2180,21 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Playoffs: programar cruces (fecha/hora/cancha) */}
+      {/* Playoffs: completar fecha/hora/cancha antes de crear */}
       {openPOModal && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenPOModal(false)}
         >
           <div
-            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[80vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
-              Programar cruces · {faseLabels[poModalFase] || 'Playoffs'}
+              {poFaseKey ? faseLabels[poFaseKey] || poFaseKey : 'Cruces'}
             </h3>
-
-            <form onSubmit={guardarCrucesPlayoffs} className='space-y-3'>
-              {poModalPairs.map((p, idx) => (
+            <form onSubmit={guardarPlayoffsConDetalles} className='space-y-3'>
+              {poPairs.map((p, idx) => (
                 <div key={idx} className='rounded-xl border p-3'>
                   <div className='text-sm font-medium mb-2'>
                     {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
@@ -2195,7 +2207,7 @@ export default function Torneo() {
                         className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.fecha}
                         onChange={(e) =>
-                          setPoModalPairs((arr) => {
+                          setPoPairs((arr) => {
                             const copy = arr.slice();
                             copy[idx] = { ...copy[idx], fecha: e.target.value };
                             return copy;
@@ -2211,7 +2223,7 @@ export default function Torneo() {
                         placeholder='Ej. Club A'
                         value={p.cancha}
                         onChange={(e) =>
-                          setPoModalPairs((arr) => {
+                          setPoPairs((arr) => {
                             const copy = arr.slice();
                             copy[idx] = {
                               ...copy[idx],
@@ -2237,7 +2249,7 @@ export default function Torneo() {
                 </button>
                 <button
                   type='submit'
-                  className='px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
+                  className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                 >
                   Crear cruces
                 </button>
