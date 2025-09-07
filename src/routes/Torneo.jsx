@@ -183,7 +183,7 @@ function buildTable(partidosFinalizados, equiposMap) {
   );
 }
 
-/* Fila partido */
+/* Fila partido (acciones abajo) */
 function MatchRow({
   localId,
   visitanteId,
@@ -285,7 +285,7 @@ export default function Torneo() {
   const [equipos, setEquipos] = useState([]);
   const [partidos, setPartidos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('fixture');
+  const [tab, setTab] = useState('fixture'); // 'fase' solo si hay fases o es admin
 
   /* Resultado (modal) */
   const [openResult, setOpenResult] = useState(false);
@@ -327,6 +327,11 @@ export default function Torneo() {
   const [openPOConfig, setOpenPOConfig] = useState(false);
   const [poN, setPoN] = useState(4); // 2|4|8|16
   const [poSeleccion, setPoSeleccion] = useState([]);
+
+  /* Modal: programar cruces de playoffs */
+  const [openPOModal, setOpenPOModal] = useState(false);
+  const [poModalFase, setPoModalFase] = useState('otros'); // 'final'|'semi'|'cuartos'|'octavos'
+  const [poModalPairs, setPoModalPairs] = useState([]); // [{localId,visitanteId,fecha,cancha}]
 
   /* Permisos */
   useEffect(() => {
@@ -416,7 +421,7 @@ export default function Torneo() {
       .map((k) => ({ dateKey: k, matches: byDate[k] }));
   }, [fixture]);
 
-  /* Derivados: fases */
+  /* Derivados: fases (playoffs/copas) */
   const fasePartidos = useMemo(
     () => partidos.filter((p) => p.fase),
     [partidos]
@@ -439,6 +444,7 @@ export default function Torneo() {
       .map((k) => ({ fase: k, matches: map[k] }));
   }, [fasePartidos]);
 
+  /* Partidos de copas (mini fixture ya creado) */
   const cupMatches = useMemo(() => {
     const out = { 'copa-oro': [], 'copa-plata': [], 'copa-bronce': [] };
     for (const m of fasePartidos) {
@@ -587,7 +593,6 @@ export default function Torneo() {
     try {
       await deleteDoc(doc(db, 'torneos', id, 'fases', 'copas'));
     } catch (err) {
-      // El doc puede no existir o no tener permisos; no es fatal
       console.debug(
         'Ignorado al borrar fases/copas:',
         err?.code || err?.message || err
@@ -690,6 +695,7 @@ export default function Torneo() {
     setOpenCopasManual(true);
   };
 
+  // Autorrellenar cupos desde posiciones (según cupo actual)
   const autoRellenarCopas = () => {
     const top = posiciones.map((t) => t.id);
     const oro = top.slice(0, copaMax.oro);
@@ -703,11 +709,13 @@ export default function Torneo() {
 
   const toggleCopa = (copa, teamId) => {
     setCopasSel((prev) => {
+      // quitar de todas
       const next = {
         oro: prev.oro.filter((x) => x !== teamId),
         plata: prev.plata.filter((x) => x !== teamId),
         bronce: prev.bronce.filter((x) => x !== teamId),
       };
+      // agregar/quitar en la elegida
       const arr = new Set(next[copa]);
       arr.has(teamId) ? arr.delete(teamId) : arr.add(teamId);
       next[copa] = Array.from(arr);
@@ -724,12 +732,14 @@ export default function Torneo() {
       );
 
     const { oro, plata, bronce } = copasSel;
+    // Validaciones
     if (
       oro.length > copaMax.oro ||
       plata.length > copaMax.plata ||
       bronce.length > copaMax.bronce
-    )
+    ) {
       return alert('No superes los cupos configurados.');
+    }
     const picks = [...oro, ...plata, ...bronce];
     if (new Set(picks).size !== picks.length)
       return alert('Un equipo no puede estar en más de una copa.');
@@ -749,6 +759,7 @@ export default function Torneo() {
     }
   };
 
+  // Abrir modal para programar mini-fixture de una copa
   const abrirModalFixtureCopa = (claveCopa, ids) => {
     if (!canManage) return;
     if (modoFase !== 'copas')
@@ -757,6 +768,7 @@ export default function Torneo() {
       );
     if (!ids || ids.length < 2)
       return alert('Se necesitan al menos 2 equipos en la copa.');
+
     const pairs = [];
     for (let i = 0; i < ids.length; i++)
       for (let j = i + 1; j < ids.length; j++)
@@ -766,6 +778,7 @@ export default function Torneo() {
           fecha: '',
           cancha: '',
         });
+
     setCopaModalKey(claveCopa);
     setCopaModalPairs(pairs);
     setOpenCopaModal(true);
@@ -788,19 +801,22 @@ export default function Torneo() {
     }
 
     try {
+      // evitar duplicados: borrar previos de esa copa
       const existentes = fasePartidos.filter((m) => m.fase === copaModalKey);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
+
+      // crear
       await Promise.all(
         copaModalPairs.map((p) =>
           addDoc(collection(db, 'torneos', id, 'partidos'), {
             localId: p.localId,
             visitanteId: p.visitanteId,
             estado: 'pendiente',
-            fase: copaModalKey,
+            fase: copaModalKey, // 'copa-oro'|'copa-plata'|'copa-bronce'
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
             createdAt: serverTimestamp(),
@@ -842,6 +858,22 @@ export default function Torneo() {
     setOpenPOConfig(true);
   };
 
+  const abrirProgramarCruces = (fase, orderedIds) => {
+    // genera pares 1–N, 2–(N-1), etc.
+    const pairs = [];
+    for (let i = 0; i < Math.floor(orderedIds.length / 2); i++) {
+      pairs.push({
+        localId: orderedIds[i],
+        visitanteId: orderedIds[orderedIds.length - 1 - i],
+        fecha: '',
+        cancha: '',
+      });
+    }
+    setPoModalFase(fase);
+    setPoModalPairs(pairs);
+    setOpenPOModal(true);
+  };
+
   const guardarPOConfig = async (e) => {
     e.preventDefault();
     if (!canManage) return;
@@ -858,28 +890,51 @@ export default function Torneo() {
       .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
     const fase = seedName(poN);
 
+    // En lugar de crear directo, abrimos modal para programar (fecha/cancha)
+    abrirProgramarCruces(fase, ordered);
+    setOpenPOConfig(false);
+  };
+
+  const guardarCrucesPlayoffs = async (e) => {
+    e.preventDefault();
+    if (!canManage) return;
+    if (modoFase !== 'playoffs')
+      return alert('El modo activo es Copas. Cambiá a Playoffs.');
+
+    if (!poModalPairs.length) return;
+    for (const p of poModalPairs) {
+      if (!p.fecha) return alert('Completá fecha y hora en todos los cruces.');
+      if (!p.cancha?.trim())
+        return alert('Completá la cancha en todos los cruces.');
+    }
+
     try {
-      const existentes = fasePartidos.filter((m) => m.fase === fase);
+      // borrar fase existente
+      const existentes = fasePartidos.filter((m) => m.fase === poModalFase);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-      const baseHora = Date.now() + 60 * 60 * 1000;
-      for (let i = 0; i < ordered.length / 2; i++) {
-        const L = ordered[i],
-          V = ordered[ordered.length - 1 - i];
-        await addDoc(collection(db, 'torneos', id, 'partidos'), {
-          localId: L,
-          visitanteId: V,
-          estado: 'pendiente',
-          fase,
-          dia: new Date(baseHora + i * 3600000),
-          cancha: '',
-          createdAt: serverTimestamp(),
-        });
-      }
-      setOpenPOConfig(false);
+
+      // crear
+      await Promise.all(
+        poModalPairs.map((p) =>
+          addDoc(collection(db, 'torneos', id, 'partidos'), {
+            localId: p.localId,
+            visitanteId: p.visitanteId,
+            estado: 'pendiente',
+            fase: poModalFase,
+            dia: new Date(p.fecha),
+            cancha: p.cancha.trim(),
+            createdAt: serverTimestamp(),
+          })
+        )
+      );
+
+      setOpenPOModal(false);
+      setPoModalPairs([]);
+      alert('Cruces creados.');
     } catch (e2) {
       console.error(e2);
       alert('No se pudieron crear los cruces.');
@@ -1011,73 +1066,68 @@ export default function Torneo() {
       {/* FIXTURE */}
       {!loading && tab === 'fixture' && (
         <div className='space-y-4'>
-          {(() => {
-            const byDate = fixtureGrouped;
-            if (byDate.length === 0) {
-              return (
-                <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
-                  <div className='text-4xl mb-2'>📅</div>
-                  <p className='text-gray-600'>No hay partidos próximos.</p>
-                </div>
-              );
-            }
-            return byDate.map(({ dateKey, matches }) => (
-              <div key={dateKey} className='space-y-2'>
-                <div className='text-sm text-gray-500'>
-                  {dateKey === 'Sin fecha'
-                    ? 'Sin fecha'
-                    : new Date(dateKey).toLocaleDateString()}
-                </div>
-                <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                  {matches.map((p) => (
-                    <MatchRow
-                      key={p.id}
-                      localId={p.localId}
-                      visitanteId={p.visitanteId}
-                      equipos={equipos}
-                      equiposMap={equiposMap}
-                      ts={p.dia}
-                      cancha={p.cancha}
-                      canManage={canManage}
-                      onEditScore={() => openResultado(p)}
-                      onDelete={() => solicitarBorrarPartido(p)}
-                    />
-                  ))}
-                </div>
+          {fixtureGrouped.length === 0 && (
+            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
+              <div className='text-4xl mb-2'>📅</div>
+              <p className='text-gray-600'>No hay partidos próximos.</p>
+            </div>
+          )}
+
+          {fixtureGrouped.map(({ dateKey, matches }) => (
+            <div key={dateKey} className='space-y-2'>
+              <div className='text-sm text-gray-500'>
+                {dateKey === 'Sin fecha'
+                  ? 'Sin fecha'
+                  : new Date(dateKey).toLocaleDateString()}
               </div>
-            ));
-          })()}
+              <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                {matches.map((p) => (
+                  <MatchRow
+                    key={p.id}
+                    localId={p.localId}
+                    visitanteId={p.visitanteId}
+                    equipos={equipos}
+                    equiposMap={equiposMap}
+                    ts={p.dia}
+                    cancha={p.cancha}
+                    canManage={canManage}
+                    onEditScore={() => openResultado(p)}
+                    onDelete={() => solicitarBorrarPartido(p)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* RESULTADOS */}
       {!loading && tab === 'resultados' && (
         <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-          {resultados.length === 0 ? (
+          {resultados.length === 0 && (
             <div className='col-span-full text-center bg-white border rounded-2xl p-8 shadow-sm'>
               <div className='text-4xl mb-2'>🏀</div>
               <p className='text-gray-600'>Todavía no hay resultados.</p>
             </div>
-          ) : (
-            resultados.map((p) => (
-              <MatchRow
-                key={p.id}
-                localId={p.localId}
-                visitanteId={p.visitanteId}
-                scoreLocal={p.scoreLocal}
-                scoreVisitante={p.scoreVisitante}
-                equipos={equipos}
-                equiposMap={equiposMap}
-                ts={p.dia}
-                cancha={p.cancha}
-                canManage={canManage}
-                isResult
-                onEditScore={() => openResultado(p)}
-                onDelete={() => solicitarBorrarPartido(p)}
-                onRevert={() => revertirResultado(p.id)}
-              />
-            ))
           )}
+          {resultados.map((p) => (
+            <MatchRow
+              key={p.id}
+              localId={p.localId}
+              visitanteId={p.visitanteId}
+              scoreLocal={p.scoreLocal}
+              scoreVisitante={p.scoreVisitante}
+              equipos={equipos}
+              equiposMap={equiposMap}
+              ts={p.dia}
+              cancha={p.cancha}
+              canManage={canManage}
+              isResult
+              onEditScore={() => openResultado(p)}
+              onDelete={() => solicitarBorrarPartido(p)}
+              onRevert={() => revertirResultado(p.id)}
+            />
+          ))}
         </div>
       )}
 
@@ -1182,41 +1232,39 @@ export default function Torneo() {
       {/* FASE FINAL */}
       {!loading && tab === 'fase' && (
         <div className='space-y-3'>
-          {/* Selector de modo */}
-          <div className='rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap'>
-            <div className='font-semibold'>Modo de fase:</div>
-            <div className='flex items-center gap-2'>
-              <button
-                className={`px-3 py-2 rounded-xl border ${
-                  modoFase === 'copas'
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white hover:bg-gray-50'
-                }`}
-                onClick={() => cambiarModo('copas')}
-                disabled={!canManage}
-                title={canManage ? 'Cambiar a Copas' : 'Solo admin'}
-              >
-                Copas
-              </button>
-              <button
-                className={`px-3 py-2 rounded-xl border ${
-                  modoFase === 'playoffs'
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white hover:bg-gray-50'
-                }`}
-                onClick={() => cambiarModo('playoffs')}
-                disabled={!canManage}
-                title={canManage ? 'Cambiar a Playoffs' : 'Solo admin'}
-              >
-                Playoffs
-              </button>
-            </div>
-            {!modoFase && (
-              <div className='text-sm text-gray-600'>
-                Elegí un modo para empezar.
+          {/* Selector de modo (solo admin; invitados NO ven nada) */}
+          {canManage && (
+            <div className='rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap'>
+              <div className='font-semibold'>Modo de fase:</div>
+              <div className='flex items-center gap-2'>
+                <button
+                  className={`px-3 py-2 rounded-xl border ${
+                    modoFase === 'copas'
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white hover:bg-gray-50'
+                  }`}
+                  onClick={() => cambiarModo('copas')}
+                >
+                  Copas
+                </button>
+                <button
+                  className={`px-3 py-2 rounded-xl border ${
+                    modoFase === 'playoffs'
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white hover:bg-gray-50'
+                  }`}
+                  onClick={() => cambiarModo('playoffs')}
+                >
+                  Playoffs
+                </button>
               </div>
-            )}
-          </div>
+              {!modoFase && (
+                <div className='text-sm text-gray-600'>
+                  Elegí un modo para empezar.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Panel COPAS */}
           {modoFase === 'copas' && (
@@ -1225,11 +1273,16 @@ export default function Torneo() {
                 Copas (Oro / Plata / Bronce)
               </h3>
               <p className='text-sm text-gray-600'>
-                El admin define cupos y equipos por copa. Podés generar un
-                mini-fixture con fecha/hora/cancha.
+                {canManage
+                  ? 'Definí cupos y equipos por copa. Podés generar un mini-fixture con fecha/hora/cancha.'
+                  : 'Vista de copas y partidos programados.'}
               </p>
 
-              <div className='mt-3 grid grid-cols-1 md:grid-cols-3 gap-3'>
+              <div
+                className={`mt-3 grid grid-cols-1 ${
+                  canManage ? 'md:grid-cols-3' : 'md:grid-cols-1'
+                } gap-3`}
+              >
                 {/* Actual */}
                 <div className='rounded-xl border p-3'>
                   <div className='text-sm font-medium mb-2'>Actual</div>
@@ -1259,35 +1312,37 @@ export default function Torneo() {
                   )}
                 </div>
 
-                {/* Sugerencia */}
-                <div className='rounded-xl border p-3'>
-                  <div className='text-sm font-medium mb-2'>Sugerencia</div>
-                  <div className='space-y-2 text-sm'>
-                    <div>
-                      <b>Oro:</b>{' '}
-                      {(recomendacionCopas.oro || [])
-                        .map((id) => equiposMap[id])
-                        .join(', ') || '-'}
-                    </div>
-                    <div>
-                      <b>Plata:</b>{' '}
-                      {(recomendacionCopas.plata || [])
-                        .map((id) => equiposMap[id])
-                        .join(', ') || '-'}
-                    </div>
-                    <div>
-                      <b>Bronce:</b>{' '}
-                      {(recomendacionCopas.bronce || [])
-                        .map((id) => equiposMap[id])
-                        .join(', ') || '-'}
+                {/* Sugerencia (solo admin) */}
+                {canManage && (
+                  <div className='rounded-xl border p-3'>
+                    <div className='text-sm font-medium mb-2'>Sugerencia</div>
+                    <div className='space-y-2 text-sm'>
+                      <div>
+                        <b>Oro:</b>{' '}
+                        {(recomendacionCopas.oro || [])
+                          .map((id) => equiposMap[id])
+                          .join(', ') || '-'}
+                      </div>
+                      <div>
+                        <b>Plata:</b>{' '}
+                        {(recomendacionCopas.plata || [])
+                          .map((id) => equiposMap[id])
+                          .join(', ') || '-'}
+                      </div>
+                      <div>
+                        <b>Bronce:</b>{' '}
+                        {(recomendacionCopas.bronce || [])
+                          .map((id) => equiposMap[id])
+                          .join(', ') || '-'}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Acciones */}
-                <div className='rounded-xl border p-3'>
-                  <div className='text-sm font-medium mb-2'>Acciones</div>
-                  {canManage ? (
+                {/* Acciones (solo admin) */}
+                {canManage && (
+                  <div className='rounded-xl border p-3'>
+                    <div className='text-sm font-medium mb-2'>Acciones</div>
                     <div className='flex flex-col gap-2'>
                       <button
                         onClick={asignarCopasAuto}
@@ -1335,13 +1390,11 @@ export default function Torneo() {
                         Generar mini-fixture (Bronce)
                       </button>
                     </div>
-                  ) : (
-                    <div className='text-xs text-gray-500'>Solo admin</div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* Partidos de copas */}
+              {/* Partidos de copas – visible para todos */}
               {(cupMatches['copa-oro'].length ||
                 cupMatches['copa-plata'].length ||
                 cupMatches['copa-bronce'].length) && (
@@ -1395,8 +1448,9 @@ export default function Torneo() {
                 <div>
                   <h3 className='font-semibold text-lg'>Playoffs</h3>
                   <p className='text-sm text-gray-600'>
-                    Elegí cuántos entran (2, 4, 8, 16) y se arman cruces por
-                    siembra.
+                    {canManage
+                      ? 'Elegí cuántos entran (2, 4, 8, 16), seleccioná y programá cada cruce.'
+                      : 'Cruces de play-offs.'}
                   </p>
                 </div>
                 {canManage && (
@@ -1473,7 +1527,7 @@ export default function Torneo() {
           onClick={closeResultado}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Cargar resultado</h3>
@@ -1551,14 +1605,14 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Nuevo partido */}
+      {/* Nuevo partido (fase regular) */}
       {openMatch && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenMatch(false)}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Nuevo partido</h3>
@@ -1657,7 +1711,7 @@ export default function Torneo() {
           onClick={() => setOpenTeam(false)}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Nuevo equipo</h3>
@@ -1733,7 +1787,7 @@ export default function Torneo() {
           onClick={cancelarBorrarPartido}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -1777,14 +1831,14 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Copas manual */}
+      {/* Copas manual (cupos + checkboxes) */}
       {openCopasManual && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenCopasManual(false)}
         >
           <div
-            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -1792,6 +1846,7 @@ export default function Torneo() {
             </h3>
 
             <form onSubmit={guardarCopasManual} className='space-y-4'>
+              {/* Cupos */}
               <div className='rounded-xl border p-3'>
                 <div className='text-sm font-medium mb-2'>Cupos por copa</div>
                 <div className='flex flex-wrap gap-4 items-center'>
@@ -1820,6 +1875,7 @@ export default function Torneo() {
                       />
                     </label>
                   ))}
+
                   <button
                     type='button'
                     onClick={autoRellenarCopas}
@@ -1831,6 +1887,7 @@ export default function Torneo() {
                 </div>
               </div>
 
+              {/* Selección de equipos */}
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 {['oro', 'plata', 'bronce'].map((copa) => (
                   <div key={copa} className='rounded-xl border p-3'>
@@ -1896,7 +1953,7 @@ export default function Torneo() {
           onClick={() => setOpenCopaModal(false)}
         >
           <div
-            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -1976,14 +2033,14 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Playoffs config */}
+      {/* Playoffs: seleccionar equipos */}
       {openPOConfig && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenPOConfig(false)}
         >
           <div
-            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Generar playoffs</h3>
@@ -2101,6 +2158,86 @@ export default function Torneo() {
                 <button
                   type='submit'
                   className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
+                >
+                  Continuar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Playoffs: programar cruces (fecha/hora/cancha) */}
+      {openPOModal && canManage && (
+        <div
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+          onClick={() => setOpenPOModal(false)}
+        >
+          <div
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className='text-lg font-semibold mb-3'>
+              Programar cruces · {faseLabels[poModalFase] || 'Playoffs'}
+            </h3>
+
+            <form onSubmit={guardarCrucesPlayoffs} className='space-y-3'>
+              {poModalPairs.map((p, idx) => (
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='text-sm font-medium mb-2'>
+                    {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
+                  </div>
+                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                    <div>
+                      <label className='text-sm'>Fecha & hora</label>
+                      <input
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        value={p.fecha}
+                        onChange={(e) =>
+                          setPoModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = { ...copy[idx], fecha: e.target.value };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
+                    </div>
+                    <div className='md:col-span-2'>
+                      <label className='text-sm'>Cancha</label>
+                      <input
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
+                        value={p.cancha}
+                        onChange={(e) =>
+                          setPoModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = {
+                              ...copy[idx],
+                              cancha: e.target.value,
+                            };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className='flex items-center justify-end gap-2 pt-2'>
+                <button
+                  type='button'
+                  onClick={() => setOpenPOModal(false)}
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+                >
+                  Cancelar
+                </button>
+                <button
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                 >
                   Crear cruces
                 </button>
