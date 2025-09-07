@@ -15,6 +15,8 @@ import {
   deleteDoc,
   deleteField,
   setDoc,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { isAdmin } from '../lib/firestore';
 
@@ -401,7 +403,6 @@ export default function Torneo() {
   const [openPOConfig, setOpenPOConfig] = useState(false);
   const [poN, setPoN] = useState(4); // 2|4|8|16
   const [poSeleccion, setPoSeleccion] = useState([]);
-  // Modal de detalles (día/hora/cancha) para los cruces de playoffs
   const [openPOModal, setOpenPOModal] = useState(false);
   const [poFaseKey, setPoFaseKey] = useState(null); // 'final'|'semi'|'cuartos'|'octavos'
   const [poPairs, setPoPairs] = useState([]); // [{localId, visitanteId, fecha, cancha}]
@@ -528,6 +529,31 @@ export default function Torneo() {
     return out;
   }, [fasePartidos]);
 
+  /* ---------- TABLAS por COPA ---------- */
+  const cupResults = useMemo(
+    () => ({
+      'copa-oro': cupMatches['copa-oro'].filter(
+        (p) => p.estado === 'finalizado'
+      ),
+      'copa-plata': cupMatches['copa-plata'].filter(
+        (p) => p.estado === 'finalizado'
+      ),
+      'copa-bronce': cupMatches['copa-bronce'].filter(
+        (p) => p.estado === 'finalizado'
+      ),
+    }),
+    [cupMatches]
+  );
+
+  const cupTables = useMemo(
+    () => ({
+      'copa-oro': buildTable(cupResults['copa-oro'], equiposMap),
+      'copa-plata': buildTable(cupResults['copa-plata'], equiposMap),
+      'copa-bronce': buildTable(cupResults['copa-bronce'], equiposMap),
+    }),
+    [cupResults, equiposMap]
+  );
+
   /* ---------- Resultado ---------- */
   const openResultado = (match) => {
     if (!canManage) return;
@@ -547,6 +573,115 @@ export default function Torneo() {
     setScoreVisitante('');
     setSaving(false);
   };
+
+  // Avance automático de Playoffs (octavos->cuartos->semi->final)
+  const avanzarPlayoffsSiCorresponde = async (faseActual) => {
+    const mapNext = { octavos: 'cuartos', cuartos: 'semi', semi: 'final' };
+    const nextFase = mapNext[faseActual];
+    if (!nextFase) return;
+
+    try {
+      const partidosRef = collection(db, 'torneos', id, 'partidos');
+
+      // Traer TODOS los partidos de la fase actual
+      const snap = await getDocs(
+        query(partidosRef, where('fase', '==', faseActual))
+      );
+      const actuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      if (
+        !actuales.length ||
+        !actuales.every(
+          (m) =>
+            m.estado === 'finalizado' &&
+            Number.isFinite(m.scoreLocal) &&
+            Number.isFinite(m.scoreVisitante)
+        )
+      ) {
+        return; // todavía faltan cerrar partidos
+      }
+
+      // Determinar ganadores en orden cronológico
+      const ordenados = actuales
+        .slice()
+        .sort(
+          (a, b) =>
+            (a.dia?.seconds ?? 0) - (b.dia?.seconds ?? 0) ||
+            (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0)
+        );
+
+      const winners = ordenados.map((m) =>
+        m.scoreLocal > m.scoreVisitante ? m.localId : m.visitanteId
+      );
+
+      // Pairs de ganadores: (0 vs 1), (2 vs 3), ...
+      const pairs = [];
+      for (let i = 0; i < winners.length; i += 2) {
+        if (winners[i] && winners[i + 1])
+          pairs.push([winners[i], winners[i + 1]]);
+      }
+      if (pairs.length === 0) return;
+
+      // Traer existentes de la siguiente fase
+      const snapNext = await getDocs(
+        query(partidosRef, where('fase', '==', nextFase))
+      );
+      let nextMatches = snapNext.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Si ya hay partidos finalizados en la siguiente fase, no tocamos nada
+      if (nextMatches.some((m) => m.estado === 'finalizado')) return;
+
+      // Ordenar existentes por horario/creación para mapear 1 a 1
+      nextMatches = nextMatches
+        .slice()
+        .sort(
+          (a, b) =>
+            (a.dia?.seconds ?? 0) - (b.dia?.seconds ?? 0) ||
+            (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0)
+        );
+
+      if (nextMatches.length === pairs.length) {
+        // Actualizar en lugar de crear
+        await Promise.all(
+          nextMatches.map((m, idx) => {
+            const [L, V] = pairs[idx] || [];
+            if (!L || !V) return Promise.resolve();
+            return updateDoc(doc(db, 'torneos', id, 'partidos', m.id), {
+              localId: L,
+              visitanteId: V,
+              estado: 'pendiente',
+              cancha: m.cancha ?? '',
+              scoreLocal: deleteField(),
+              scoreVisitante: deleteField(),
+              updatedAt: serverTimestamp(),
+            });
+          })
+        );
+      } else {
+        // Borrar no-finalizados y crear nuevos
+        await Promise.all(
+          nextMatches
+            .filter((m) => m.estado !== 'finalizado')
+            .map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
+        );
+        await Promise.all(
+          pairs.map(([L, V]) =>
+            addDoc(partidosRef, {
+              localId: L,
+              visitanteId: V,
+              estado: 'pendiente',
+              fase: nextFase,
+              cancha: '',
+              createdAt: serverTimestamp(),
+            })
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Auto avance playoffs error:', err);
+    }
+  };
+
   const saveResultado = async (e) => {
     e.preventDefault();
     if (!canManage || !editingMatch) return;
@@ -563,6 +698,15 @@ export default function Torneo() {
         estado: 'finalizado',
         updatedAt: serverTimestamp(),
       });
+
+      // Si corresponde, avanzar automáticamente la llave
+      if (
+        editingMatch?.fase &&
+        ['octavos', 'cuartos', 'semi'].includes(editingMatch.fase)
+      ) {
+        await avanzarPlayoffsSiCorresponde(editingMatch.fase);
+      }
+
       closeResultado();
     } catch (err) {
       console.error(err);
@@ -570,6 +714,7 @@ export default function Torneo() {
       alert('No se pudo guardar el resultado.');
     }
   };
+
   const revertirResultado = async (matchId) => {
     if (!canManage) return;
     if (!confirm('¿Revertir este resultado a pendiente?')) return;
@@ -933,7 +1078,7 @@ export default function Torneo() {
       .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
     const fase = seedName(poN);
 
-    // En lugar de crear directamente, abrimos el modal para completar fecha/hora/cancha
+    // Preparar modal para asignar fecha/hora/cancha de los cruces creados
     const pairs = [];
     for (let i = 0; i < ordered.length / 2; i++) {
       const L = ordered[i],
@@ -1283,10 +1428,10 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* FASE FINAL (bonita) */}
+      {/* FASE FINAL */}
       {!loading && tab === 'fase' && (
         <div className='space-y-4'>
-          {/* Selector de modo (solo admin; invitado NO ve nada) */}
+          {/* Selector de modo (solo admin) */}
           {canManage && (
             <FancyPanel
               icon={<IconTrophy />}
@@ -1392,11 +1537,92 @@ export default function Torneo() {
                 })}
               </div>
 
-              {/* Partidos de copas (ordenados por copa) */}
+              {/* TABLAS por copa */}
+              <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) => {
+                  const tabla = cupTables[ck];
+                  const titulo =
+                    ck === 'copa-oro'
+                      ? 'Tabla · Copa Oro'
+                      : ck === 'copa-plata'
+                      ? 'Tabla · Copa Plata'
+                      : 'Tabla · Copa Bronce';
+
+                  return (
+                    <div
+                      key={ck}
+                      className='rounded-2xl border bg-white overflow-hidden'
+                    >
+                      <div className='px-3 py-2 bg-gray-50 border-b text-sm font-semibold flex items-center gap-2'>
+                        <CupTag tipo={ck} /> <span>{titulo}</span>
+                      </div>
+                      <div className='overflow-x-auto'>
+                        <table className='min-w-full text-xs'>
+                          <thead>
+                            <tr className='text-gray-600'>
+                              <th className='text-left px-3 py-1.5'>#</th>
+                              <th className='text-left px-3 py-1.5'>Equipo</th>
+                              <th className='text-center px-2 py-1.5'>PJ</th>
+                              <th className='text-center px-2 py-1.5'>PG</th>
+                              <th className='text-center px-2 py-1.5'>PP</th>
+                              <th className='text-center px-2 py-1.5'>PF</th>
+                              <th className='text-center px-2 py-1.5'>PC</th>
+                              <th className='text-center px-2 py-1.5'>DIF</th>
+                              <th className='text-center px-2 py-1.5'>PTS</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tabla.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={9}
+                                  className='px-3 py-2 text-center text-gray-500'
+                                >
+                                  Sin resultados aún.
+                                </td>
+                              </tr>
+                            ) : (
+                              tabla.map((t, i) => (
+                                <tr key={t.id} className='border-t'>
+                                  <td className='px-3 py-1.5'>{i + 1}</td>
+                                  <td className='px-3 py-1.5'>{t.nombre}</td>
+                                  <td className='px-2 py-1.5 text-center'>
+                                    {t.pj}
+                                  </td>
+                                  <td className='px-2 py-1.5 text-center'>
+                                    {t.pg}
+                                  </td>
+                                  <td className='px-2 py-1.5 text-center'>
+                                    {t.pp}
+                                  </td>
+                                  <td className='px-2 py-1.5 text-center'>
+                                    {t.pf}
+                                  </td>
+                                  <td className='px-2 py-1.5 text-center'>
+                                    {t.pc}
+                                  </td>
+                                  <td className='px-2 py-1.5 text-center'>
+                                    {t.dif}
+                                  </td>
+                                  <td className='px-2 py-1.5 text-center font-semibold'>
+                                    {t.pts}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Partidos de copas */}
               {cupMatches['copa-oro'].length ||
               cupMatches['copa-plata'].length ||
               cupMatches['copa-bronce'].length ? (
-                <div className='space-y-5'>
+                <div className='space-y-5 mt-4'>
                   {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) =>
                     cupMatches[ck].length ? (
                       <div key={ck} className='space-y-2'>
@@ -1438,7 +1664,7 @@ export default function Torneo() {
                   )}
                 </div>
               ) : (
-                <div className='text-sm text-gray-500'>
+                <div className='text-sm text-gray-500 mt-2'>
                   No hay partidos de copas aún.
                 </div>
               )}
@@ -1452,7 +1678,7 @@ export default function Torneo() {
               title='Playoffs'
               subtitle={
                 canManage
-                  ? 'Elegí participantes y definí cruces con día, hora y cancha'
+                  ? 'Elegí participantes y definí cruces; la llave avanza sola cuando se cierran los partidos'
                   : 'Cruces y resultados'
               }
               right={
@@ -2046,7 +2272,7 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Playoffs: selección (quiénes entran) */}
+      {/* Playoffs: selección */}
       {openPOConfig && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
