@@ -1471,10 +1471,12 @@ export default function Torneo() {
               </div>
 
               {/* Partidos de copas */}
-              {(cupMatches['copa-oro'].length ||
-                cupMatches['copa-plata'].length ||
-                cupMatches['copa-bronce'].length) && (
-                <div className='mt-4 space-y-6'>
+              {Boolean(
+                cupMatches['copa-oro'].length ||
+                  cupMatches['copa-plata'].length ||
+                  cupMatches['copa-bronce'].length
+              ) && (
+                <div className='mt-4 space-y-4'>
                   {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) =>
                     cupMatches[ck].length ? (
                       <div key={ck} className='space-y-2'>
