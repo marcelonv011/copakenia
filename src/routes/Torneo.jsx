@@ -82,14 +82,6 @@ const IconPlus = (p) => (
     <path fill='currentColor' d='M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2z' />
   </svg>
 );
-const IconCalendar = (p) => (
-  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
-    <path
-      fill='currentColor'
-      d='M7 2h2v2h6V2h2v2h3v16H4V4h3V2zm13 6H4v10h16V8z'
-    />
-  </svg>
-);
 
 /* Avatar / EquipoTag */
 const initials = (name = '') =>
@@ -139,7 +131,7 @@ function fmtFecha(ts) {
   return `${fecha} · ${hora}`;
 }
 
-/* Tabla posiciones (reutilizable para copas y fase regular) */
+/* Tabla posiciones builder */
 function buildTable(partidosFinalizados, equiposMap) {
   const table = {};
   const ensure = (id) =>
@@ -191,7 +183,7 @@ function buildTable(partidosFinalizados, equiposMap) {
   );
 }
 
-/* Fila partido */
+/* Tarjeta partido (lista) */
 function MatchRow({
   localId,
   visitanteId,
@@ -321,12 +313,12 @@ export default function Torneo() {
   const [modoFase, setModoFase] = useState(null); // 'copas' | 'playoffs' | null
 
   /* Fase final – Copas */
-  const [faseCopas, setFaseCopas] = useState(null); // { oro:[], plata:[], bronce:[], cupos:{oro,plata,bronce} }
+  const [faseCopas, setFaseCopas] = useState(null);
   const [openCopasManual, setOpenCopasManual] = useState(false);
   const [copasSel, setCopasSel] = useState({ oro: [], plata: [], bronce: [] });
   const [copaMax, setCopaMax] = useState({ oro: 1, plata: 1, bronce: 2 });
 
-  /* Modal: fixture de copas con fecha/hora/cancha */
+  /* Modal: mini-fixture copas */
   const [openCopaModal, setOpenCopaModal] = useState(false);
   const [copaModalKey, setCopaModalKey] = useState(null); // 'copa-oro' | 'copa-plata' | 'copa-bronce'
   const [copaModalPairs, setCopaModalPairs] = useState([]); // [{localId, visitanteId, fecha, cancha}]
@@ -336,10 +328,10 @@ export default function Torneo() {
   const [poN, setPoN] = useState(4); // 2|4|8|16
   const [poSeleccion, setPoSeleccion] = useState([]);
 
-  /* Programar rondas PO (semis/final) */
-  const [openPORoundModal, setOpenPORoundModal] = useState(false);
-  const [poRoundKey, setPoRoundKey] = useState(null); // 'semi' | 'final'
-  const [poRoundItems, setPoRoundItems] = useState([]); // [{id, localId, visitanteId, fecha, cancha}]
+  /* GRUPOS – modal programar fixtures por grupo */
+  const [openGrupoModal, setOpenGrupoModal] = useState(false);
+  const [grupoModalKey, setGrupoModalKey] = useState(null); // 'A' | 'B' ...
+  const [grupoModalPairs, setGrupoModalPairs] = useState([]); // [{localId, visitanteId, fecha, cancha}]
 
   /* Permisos */
   useEffect(() => {
@@ -399,6 +391,28 @@ export default function Torneo() {
     return m;
   }, [equipos]);
 
+  /* === GRUPOS === */
+  const gruposActivos = useMemo(() => {
+    const set = new Set();
+    equipos.forEach((e) => {
+      const g = (e.grupo || '').toString().trim().toUpperCase();
+      if (g) set.add(g);
+    });
+    return Array.from(set).sort();
+  }, [equipos]);
+
+  const equiposPorGrupo = useMemo(() => {
+    const map = {};
+    equipos.forEach((e) => {
+      const g = (e.grupo || '').toString().trim().toUpperCase() || '';
+      if (!g) return;
+      (map[g] ||= []).push(e);
+    });
+    for (const g in map)
+      map[g].sort((a, b) => a.nombre.localeCompare(b.nombre));
+    return map;
+  }, [equipos]);
+
   /* Derivados: fase regular */
   const fixture = useMemo(
     () => partidos.filter((p) => p.estado !== 'finalizado' && !p.fase),
@@ -412,10 +426,24 @@ export default function Torneo() {
         .sort((a, b) => (b.dia?.seconds ?? 0) - (a.dia?.seconds ?? 0)),
     [partidos]
   );
-  const posiciones = useMemo(
+
+  // Posiciones generales (solo si no hay múltiples grupos)
+  const posicionesGenerales = useMemo(
     () => buildTable(resultados, equiposMap),
     [resultados, equiposMap]
   );
+
+  // Posiciones por grupo (cuando hay 2+ grupos)
+  const posicionesPorGrupo = useMemo(() => {
+    const out = {};
+    for (const g of gruposActivos) {
+      const finalizados = resultados.filter(
+        (p) => (p.grupo || '').toUpperCase() === g
+      );
+      out[g] = buildTable(finalizados, equiposMap);
+    }
+    return out;
+  }, [resultados, equiposMap, gruposActivos]);
 
   const fixtureGrouped = useMemo(() => {
     const byDate = {};
@@ -430,7 +458,7 @@ export default function Torneo() {
       .map((k) => ({ dateKey: k, matches: byDate[k] }));
   }, [fixture]);
 
-  /* Derivados: fases */
+  /* Derivados: fases (playoffs/copas) */
   const fasePartidos = useMemo(
     () => partidos.filter((p) => p.fase),
     [partidos]
@@ -462,16 +490,6 @@ export default function Torneo() {
     }
     return out;
   }, [fasePartidos]);
-  /* Tablas de posiciones por COPA */
-  const cupTables = useMemo(() => {
-    const fin = (key) =>
-      fasePartidos.filter((p) => p.fase === key && p.estado === 'finalizado');
-    return {
-      oro: buildTable(fin('copa-oro'), equiposMap),
-      plata: buildTable(fin('copa-plata'), equiposMap),
-      bronce: buildTable(fin('copa-bronce'), equiposMap),
-    };
-  }, [fasePartidos, equiposMap]);
 
   /* ---------- Resultado ---------- */
   const openResultado = (match) => {
@@ -541,11 +559,20 @@ export default function Torneo() {
     if (!fecha) return alert('Elegí fecha y hora.');
     if (!cancha || !cancha.trim()) return alert('Ingresá la cancha.');
     try {
+      // si ambos tienen grupo y coincide, guardo grupo para el match
+      const gLocal = (
+        equipos.find((x) => x.id === localId)?.grupo || ''
+      ).toUpperCase();
+      const gVis = (
+        equipos.find((x) => x.id === visitanteId)?.grupo || ''
+      ).toUpperCase();
+      const grupo = gLocal && gLocal === gVis ? gLocal : '';
       await addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId,
         visitanteId,
         dia: new Date(fecha),
         cancha: cancha.trim(),
+        grupo: grupo || undefined,
         estado: 'pendiente',
         createdAt: serverTimestamp(),
       });
@@ -610,11 +637,8 @@ export default function Torneo() {
     );
     try {
       await deleteDoc(doc(db, 'torneos', id, 'fases', 'copas'));
-    } catch (err) {
-      console.debug(
-        'Ignorado al borrar fases/copas:',
-        err?.code || err?.message || err
-      );
+    } catch {
+      /* puede no existir */
     }
   };
   const cambiarModo = async (nuevo) => {
@@ -660,13 +684,27 @@ export default function Torneo() {
 
   /* ---------- Copas ---------- */
   const recomendacionCopas = useMemo(() => {
-    const ids = posiciones.map((t) => t.id);
-    return {
-      oro: ids[0] ? [ids[0]] : [],
-      plata: ids[1] ? [ids[1]] : [],
-      bronce: ids.slice(2, 4),
-    };
-  }, [posiciones]);
+    // si no hay grupos, usar tabla general
+    if (gruposActivos.length < 2) {
+      const ids = posicionesGenerales.map((t) => t.id);
+      return {
+        oro: ids[0] ? [ids[0]] : [],
+        plata: ids[1] ? [ids[1]] : [],
+        bronce: ids.slice(2, 4),
+      };
+    }
+    // con grupos: top1/top2/top3 de cada grupo
+    const oro = [],
+      plata = [],
+      bronce = [];
+    for (const g of gruposActivos) {
+      const tabla = posicionesPorGrupo[g] || [];
+      if (tabla[0]) oro.push(tabla[0].id);
+      if (tabla[1]) plata.push(tabla[1].id);
+      if (tabla[2]) bronce.push(tabla[2].id);
+    }
+    return { oro, plata, bronce };
+  }, [posicionesGenerales, posicionesPorGrupo, gruposActivos]);
 
   const asignarCopasAuto = async () => {
     if (!canManage) return;
@@ -677,7 +715,11 @@ export default function Torneo() {
     try {
       await setDoc(doc(db, 'torneos', id, 'fases', 'copas'), {
         ...recomendacionCopas,
-        cupos: { oro: 1, plata: 1, bronce: 2 },
+        cupos: {
+          oro: Math.max(1, recomendacionCopas.oro.length),
+          plata: Math.max(1, recomendacionCopas.plata.length),
+          bronce: Math.max(0, recomendacionCopas.bronce.length),
+        },
         updatedAt: serverTimestamp(),
       });
       alert('Copas asignadas automáticamente.');
@@ -713,8 +755,10 @@ export default function Torneo() {
     setOpenCopasManual(true);
   };
 
+  // Autorrellenar desde posiciones generales (si no hay grupos)
   const autoRellenarCopas = () => {
-    const top = posiciones.map((t) => t.id);
+    if (gruposActivos.length >= 2) return autoRellenarCopasDesdeGrupos();
+    const top = posicionesGenerales.map((t) => t.id);
     const oro = top.slice(0, copaMax.oro);
     const plata = top.slice(copaMax.oro, copaMax.oro + copaMax.plata);
     const bronce = top.slice(
@@ -722,6 +766,24 @@ export default function Torneo() {
       copaMax.oro + copaMax.plata + copaMax.bronce
     );
     setCopasSel({ oro, plata, bronce });
+  };
+
+  // Autorrellenar desde grupos: 1º→oro, 2º→plata, 3º→bronce (respetando cupos)
+  const autoRellenarCopasDesdeGrupos = () => {
+    const oro = [],
+      plata = [],
+      bronce = [];
+    for (const g of gruposActivos) {
+      const t = posicionesPorGrupo[g] || [];
+      if (t[0]) oro.push(t[0].id);
+      if (t[1]) plata.push(t[1].id);
+      if (t[2]) bronce.push(t[2].id);
+    }
+    setCopasSel({
+      oro: oro.slice(0, copaMax.oro),
+      plata: plata.slice(0, copaMax.plata),
+      bronce: bronce.slice(0, copaMax.bronce),
+    });
   };
 
   const toggleCopa = (copa, teamId) => {
@@ -772,6 +834,7 @@ export default function Torneo() {
     }
   };
 
+  // Mini-fixture de copa (con programación)
   const abrirModalFixtureCopa = (claveCopa, ids) => {
     if (!canManage) return;
     if (modoFase !== 'copas')
@@ -802,14 +865,12 @@ export default function Torneo() {
         'El modo activo es Playoffs. Cambiá a Copas para usar esta sección.'
       );
     if (!copaModalKey || !copaModalPairs.length) return;
-
     for (const p of copaModalPairs) {
       if (!p.fecha)
         return alert('Completá fecha y hora en todos los partidos.');
       if (!p.cancha?.trim())
         return alert('Completá la cancha en todos los partidos.');
     }
-
     try {
       const existentes = fasePartidos.filter((m) => m.fase === copaModalKey);
       await Promise.all(
@@ -823,7 +884,7 @@ export default function Torneo() {
             localId: p.localId,
             visitanteId: p.visitanteId,
             estado: 'pendiente',
-            fase: copaModalKey, // 'copa-oro' | 'copa-plata' | 'copa-bronce'
+            fase: copaModalKey,
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
             createdAt: serverTimestamp(),
@@ -858,10 +919,10 @@ export default function Torneo() {
       return alert(
         'El modo activo es Copas. Cambiá a Playoffs para usar esta sección.'
       );
-    const maxN = Math.min(posiciones.length, 16);
+    const maxN = Math.min(posicionesGenerales.length, 16);
     const defaultN = [16, 8, 4, 2].find((k) => k <= maxN) || 2;
     setPoN(defaultN);
-    setPoSeleccion(posiciones.slice(0, defaultN).map((t) => t.id));
+    setPoSeleccion(posicionesGenerales.slice(0, defaultN).map((t) => t.id));
     setOpenPOConfig(true);
   };
 
@@ -875,24 +936,19 @@ export default function Torneo() {
     if (poSeleccion.length !== poN)
       return alert(`Elegí exactamente ${poN} equipos.`);
 
-    const rankIndex = new Map(posiciones.map((t, i) => [t.id, i]));
+    const rankIndex = new Map(posicionesGenerales.map((t, i) => [t.id, i]));
     const ordered = poSeleccion
       .slice()
       .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
     const fase = seedName(poN);
-
     try {
-      // borrar fase existente de este mismo nombre
       const existentes = fasePartidos.filter((m) => m.fase === fase);
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-
-      // crear cruces 1–N, 2–(N-1)...
       const baseHora = Date.now() + 60 * 60 * 1000;
-      let slot = 0;
       for (let i = 0; i < ordered.length / 2; i++) {
         const L = ordered[i],
           V = ordered[ordered.length - 1 - i];
@@ -900,9 +956,7 @@ export default function Torneo() {
           localId: L,
           visitanteId: V,
           estado: 'pendiente',
-          fase, // 'octavos' | 'cuartos' | 'semi' | 'final'
-          poRound: fase, // redundante pero claro
-          poSlot: slot++, // 0..(n/2 - 1)
+          fase,
           dia: new Date(baseHora + i * 3600000),
           cancha: '',
           createdAt: serverTimestamp(),
@@ -932,93 +986,66 @@ export default function Torneo() {
     }
   };
 
-  /* Helpers Playoffs: ganadores y programación de siguientes rondas */
-  const winnersOf = (round) => {
-    const ms = fasePartidos.filter(
-      (m) => m.fase === round && m.estado === 'finalizado'
-    );
-    return ms
-      .map((m) => ({
-        winnerId:
-          (m.scoreLocal ?? 0) > (m.scoreVisitante ?? 0)
-            ? m.localId
-            : m.visitanteId,
-        poSlot: m.poSlot ?? 0,
-      }))
-      .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
-  };
-  const countRound = (round) =>
-    fasePartidos.filter((m) => m.fase === round).length;
-
-  const openProgramNextRound = (round) => {
+  /* ---------- GRUPOS: programar fixture por grupo ---------- */
+  const abrirModalFixtureGrupo = (g) => {
     if (!canManage) return;
-    const prev =
-      round === 'final' ? 'semi' : round === 'semi' ? 'cuartos' : 'octavos';
-    const W = winnersOf(prev).map((w) => w.winnerId);
-    if (
-      (round === 'semi' && W.length < 4) ||
-      (round === 'final' && W.length < 2)
-    ) {
-      return alert('Aún faltan resultados para armar esta ronda.');
-    }
-    // armar pares consecutivos: (0,1), (2,3)...
-    const items = [];
-    for (let i = 0; i < W.length; i += 2) {
-      items.push({
-        id: null,
-        localId: W[i],
-        visitanteId: W[i + 1],
-        fecha: '',
-        cancha: '',
-        poSlot: i / 2,
-      });
-    }
-    setPoRoundKey(round); // 'semi' | 'final'
-    setPoRoundItems(items);
-    setOpenPORoundModal(true);
+    const equiposG = (equiposPorGrupo[g] || []).map((e) => e.id);
+    if (equiposG.length < 2)
+      return alert('Ese grupo necesita al menos 2 equipos.');
+    const pairs = [];
+    for (let i = 0; i < equiposG.length; i++)
+      for (let j = i + 1; j < equiposG.length; j++)
+        pairs.push({
+          localId: equiposG[i],
+          visitanteId: equiposG[j],
+          fecha: '',
+          cancha: '',
+        });
+    setGrupoModalKey(g);
+    setGrupoModalPairs(pairs);
+    setOpenGrupoModal(true);
   };
 
-  const guardarProgramacionRound = async (e) => {
+  const guardarFixtureGrupo = async (e) => {
     e.preventDefault();
     if (!canManage) return;
-    if (!poRoundKey || !poRoundItems.length) return;
-
-    for (const r of poRoundItems) {
-      if (!r.fecha)
+    if (!grupoModalKey || !grupoModalPairs.length) return;
+    for (const p of grupoModalPairs) {
+      if (!p.fecha)
         return alert('Completá fecha y hora en todos los partidos.');
-      if (!r.cancha?.trim())
+      if (!p.cancha?.trim())
         return alert('Completá la cancha en todos los partidos.');
     }
     try {
-      // Borrar existentes de esa ronda y recrear (seguro y simple)
-      const existentes = fasePartidos.filter((m) => m.fase === poRoundKey);
+      // borrar pendientes del grupo que no son fase (regular)
+      const existentes = partidos.filter(
+        (m) => !m.fase && (m.grupo || '').toUpperCase() === grupoModalKey
+      );
       await Promise.all(
         existentes.map((m) =>
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
       await Promise.all(
-        poRoundItems.map((r) =>
+        grupoModalPairs.map((p) =>
           addDoc(collection(db, 'torneos', id, 'partidos'), {
-            localId: r.localId,
-            visitanteId: r.visitanteId,
+            localId: p.localId,
+            visitanteId: p.visitanteId,
             estado: 'pendiente',
-            fase: poRoundKey,
-            poRound: poRoundKey,
-            poSlot: r.poSlot ?? 0,
-            dia: new Date(r.fecha),
-            cancha: r.cancha.trim(),
+            grupo: grupoModalKey,
+            dia: new Date(p.fecha),
+            cancha: p.cancha.trim(),
             createdAt: serverTimestamp(),
           })
         )
       );
-      setOpenPORoundModal(false);
-      setPoRoundItems([]);
-      setPoRoundKey(null);
-      alert('Ronda programada.');
+      setOpenGrupoModal(false);
+      setGrupoModalKey(null);
+      setGrupoModalPairs([]);
+      alert('Fixture del grupo creado.');
     } catch (err) {
       console.error(err);
-      alert('No se pudo programar la ronda.');
+      alert('No se pudo crear el fixture del grupo.');
     }
   };
 
@@ -1130,17 +1157,13 @@ export default function Torneo() {
       {/* FIXTURE */}
       {!loading && tab === 'fixture' && (
         <div className='space-y-4'>
-          {(() => {
-            const byDate = fixtureGrouped;
-            if (byDate.length === 0) {
-              return (
-                <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
-                  <div className='text-4xl mb-2'>📅</div>
-                  <p className='text-gray-600'>No hay partidos próximos.</p>
-                </div>
-              );
-            }
-            return byDate.map(({ dateKey, matches }) => (
+          {fixtureGrouped.length === 0 ? (
+            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
+              <div className='text-4xl mb-2'>📅</div>
+              <p className='text-gray-600'>No hay partidos próximos.</p>
+            </div>
+          ) : (
+            fixtureGrouped.map(({ dateKey, matches }) => (
               <div key={dateKey} className='space-y-2'>
                 <div className='text-sm text-gray-500'>
                   {dateKey === 'Sin fecha'
@@ -1164,8 +1187,8 @@ export default function Torneo() {
                   ))}
                 </div>
               </div>
-            ));
-          })()}
+            ))
+          )}
         </div>
       )}
 
@@ -1202,51 +1225,126 @@ export default function Torneo() {
 
       {/* POSICIONES */}
       {!loading && tab === 'posiciones' && (
-        <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
-          <table className='min-w-full text-sm'>
-            <thead className='bg-gray-50'>
-              <tr className='text-gray-600'>
-                <th className='text-left px-4 py-2'>#</th>
-                <th className='text-left px-4 py-2'>Equipo</th>
-                <th className='text-center px-4 py-2'>PJ</th>
-                <th className='text-center px-4 py-2'>PG</th>
-                <th className='text-center px-4 py-2'>PP</th>
-                <th className='text-center px-4 py-2'>PF</th>
-                <th className='text-center px-4 py-2'>PC</th>
-                <th className='text-center px-4 py-2'>DIF</th>
-                <th className='text-center px-4 py-2'>PTS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {posiciones.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className='text-center text-gray-500 px-4 py-6'
-                  >
-                    Sin datos aún.
-                  </td>
-                </tr>
-              ) : (
-                posiciones.map((t, i) => (
-                  <tr key={t.id} className='border-t'>
-                    <td className='px-4 py-2'>{i + 1}</td>
-                    <td className='px-4 py-2'>{t.nombre}</td>
-                    <td className='px-4 py-2 text-center'>{t.pj}</td>
-                    <td className='px-4 py-2 text-center'>{t.pg}</td>
-                    <td className='px-4 py-2 text-center'>{t.pp}</td>
-                    <td className='px-4 py-2 text-center'>{t.pf}</td>
-                    <td className='px-4 py-2 text-center'>{t.pc}</td>
-                    <td className='px-4 py-2 text-center'>{t.dif}</td>
-                    <td className='px-4 py-2 text-center font-semibold'>
-                      {t.pts}
-                    </td>
+        <>
+          {/* Si hay 2+ grupos => mostrar tablas por grupo y ocultar tabla general */}
+          {gruposActivos.length >= 2 ? (
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+              {gruposActivos.map((g) => (
+                <div
+                  key={g}
+                  className='rounded-2xl bg-white p-4 shadow-sm border'
+                >
+                  <div className='flex items-center justify-between mb-3'>
+                    <div className='text-lg font-semibold'>Grupo {g}</div>
+                    {canManage && (
+                      <button
+                        onClick={() => abrirModalFixtureGrupo(g)}
+                        className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50 text-sm'
+                      >
+                        Programar grupo
+                      </button>
+                    )}
+                  </div>
+                  <div className='text-sm text-gray-500 mb-2'>
+                    {equiposPorGrupo[g]?.map((e) => e.nombre).join(' · ') ||
+                      'Sin equipos'}
+                  </div>
+                  <div className='overflow-x-auto'>
+                    <table className='min-w-full text-sm'>
+                      <thead className='bg-gray-50'>
+                        <tr className='text-gray-600'>
+                          <th className='text-left px-4 py-2'>#</th>
+                          <th className='text-left px-4 py-2'>Equipo</th>
+                          <th className='text-center px-4 py-2'>PJ</th>
+                          <th className='text-center px-4 py-2'>PG</th>
+                          <th className='text-center px-4 py-2'>PP</th>
+                          <th className='text-center px-4 py-2'>PF</th>
+                          <th className='text-center px-4 py-2'>PC</th>
+                          <th className='text-center px-4 py-2'>DIF</th>
+                          <th className='text-center px-4 py-2'>PTS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(posicionesPorGrupo[g] || []).length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={9}
+                              className='text-center text-gray-500 px-4 py-6'
+                            >
+                              Sin datos aún.
+                            </td>
+                          </tr>
+                        ) : (
+                          (posicionesPorGrupo[g] || []).map((t, i) => (
+                            <tr key={t.id} className='border-t'>
+                              <td className='px-4 py-2'>{i + 1}</td>
+                              <td className='px-4 py-2'>{t.nombre}</td>
+                              <td className='px-4 py-2 text-center'>{t.pj}</td>
+                              <td className='px-4 py-2 text-center'>{t.pg}</td>
+                              <td className='px-4 py-2 text-center'>{t.pp}</td>
+                              <td className='px-4 py-2 text-center'>{t.pf}</td>
+                              <td className='px-4 py-2 text-center'>{t.pc}</td>
+                              <td className='px-4 py-2 text-center'>{t.dif}</td>
+                              <td className='px-4 py-2 text-center font-semibold'>
+                                {t.pts}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
+              <table className='min-w-full text-sm'>
+                <thead className='bg-gray-50'>
+                  <tr className='text-gray-600'>
+                    <th className='text-left px-4 py-2'>#</th>
+                    <th className='text-left px-4 py-2'>Equipo</th>
+                    <th className='text-center px-4 py-2'>PJ</th>
+                    <th className='text-center px-4 py-2'>PG</th>
+                    <th className='text-center px-4 py-2'>PP</th>
+                    <th className='text-center px-4 py-2'>PF</th>
+                    <th className='text-center px-4 py-2'>PC</th>
+                    <th className='text-center px-4 py-2'>DIF</th>
+                    <th className='text-center px-4 py-2'>PTS</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {posicionesGenerales.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={9}
+                        className='text-center text-gray-500 px-4 py-6'
+                      >
+                        Sin datos aún.
+                      </td>
+                    </tr>
+                  ) : (
+                    posicionesGenerales.map((t, i) => (
+                      <tr key={t.id} className='border-t'>
+                        <td className='px-4 py-2'>{i + 1}</td>
+                        <td className='px-4 py-2'>{t.nombre}</td>
+                        <td className='px-4 py-2 text-center'>{t.pj}</td>
+                        <td className='px-4 py-2 text-center'>{t.pg}</td>
+                        <td className='px-4 py-2 text-center'>{t.pp}</td>
+                        <td className='px-4 py-2 text-center'>{t.pf}</td>
+                        <td className='px-4 py-2 text-center'>{t.pc}</td>
+                        <td className='px-4 py-2 text-center'>{t.dif}</td>
+                        <td className='px-4 py-2 text-center font-semibold'>
+                          {t.pts}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
       {/* EQUIPOS */}
@@ -1276,20 +1374,116 @@ export default function Torneo() {
               {equipos.map((e) => (
                 <div
                   key={e.id}
-                  className='bg-white rounded-2xl shadow-sm border p-4 flex items-center justify-between'
+                  className='bg-white rounded-2xl shadow-sm border p-4 flex flex-col gap-3'
                 >
+                  {/* Encabezado: avatar + nombre + chip del grupo actual */}
                   <div className='flex items-center gap-3 min-w-0'>
                     <Avatar name={e.nombre} logoUrl={e.logoUrl} size={28} />
-                    <div className='truncate'>{e.nombre}</div>
+                    <div className='font-medium truncate'>{e.nombre}</div>
+                    {e.grupo ? (
+                      <span className='ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700'>
+                        Grupo {String(e.grupo).toUpperCase()}
+                      </span>
+                    ) : (
+                      <span className='ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-50 text-gray-500'>
+                        Sin grupo
+                      </span>
+                    )}
                   </div>
-                  {canManage && (
-                    <button
-                      onClick={() => borrarEquipo(e.id)}
-                      className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
-                      title='Eliminar equipo'
+
+                  {/* Contenido: selector de grupo con ancho completo */}
+                  <div>
+                    <label className='text-xs text-gray-500'>
+                      Cambiar grupo
+                    </label>
+                    <select
+                      className='mt-1 w-full rounded-xl border px-3 py-2 text-sm'
+                      value={(e.grupo || '').toUpperCase()}
+                      onChange={async (ev) => {
+                        const prev = (e.grupo || '').toUpperCase();
+                        const val = ev.target.value;
+
+                        if (val === '__nuevo__') {
+                          // sugerencia automática A, B, C...
+                          const letras = gruposActivos.filter((g) =>
+                            /^[A-Z]$/.test(g)
+                          );
+                          let sugerida = 'A';
+                          for (let i = 0; i < 26; i++) {
+                            const L = String.fromCharCode(65 + i);
+                            if (!letras.includes(L)) {
+                              sugerida = L;
+                              break;
+                            }
+                          }
+                          const ingresado = prompt(
+                            'Código de grupo (ej. E, F, G, G1, Zona Norte):',
+                            sugerida
+                          );
+                          const g = (ingresado || '')
+                            .trim()
+                            .toUpperCase()
+                            .slice(0, 12);
+                          if (!g) {
+                            ev.target.value = prev;
+                            return;
+                          }
+
+                          try {
+                            await updateDoc(
+                              doc(db, 'torneos', id, 'equipos', e.id),
+                              {
+                                grupo: g,
+                                updatedAt: serverTimestamp(),
+                              }
+                            );
+                          } catch (err) {
+                            console.error(err);
+                            alert('No se pudo actualizar el grupo.');
+                            ev.target.value = prev;
+                          }
+                          return;
+                        }
+
+                        // guardar grupo existente (o limpiar)
+                        const g = val || null;
+                        try {
+                          await updateDoc(
+                            doc(db, 'torneos', id, 'equipos', e.id),
+                            {
+                              ...(g ? { grupo: g } : { grupo: deleteField() }),
+                              updatedAt: serverTimestamp(),
+                            }
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          alert('No se pudo actualizar el grupo.');
+                          ev.target.value = prev;
+                        }
+                      }}
                     >
-                      <IconTrash />
-                    </button>
+                      <option value=''>(sin grupo)</option>
+                      {gruposActivos.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                      <option value='__nuevo__'>+ Nuevo grupo…</option>
+                    </select>
+                  </div>
+
+                  {/* Footer: acciones ABAJO */}
+                  {canManage && (
+                    <div className='flex items-center justify-end gap-2 pt-1'>
+                      <button
+                        onClick={() => borrarEquipo(e.id)}
+                        className='w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
+                        title='Eliminar equipo'
+                      >
+                        <IconTrash />
+                        <span className='sm:hidden'>Eliminar</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -1301,8 +1495,8 @@ export default function Torneo() {
       {/* FASE FINAL */}
       {!loading && tab === 'fase' && (
         <div className='space-y-3'>
-          {/* Selector de modo: SOLO admin */}
-          {canManage ? (
+          {/* Selector de modo (oculto al invitado) */}
+          {canManage && (
             <div className='rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap'>
               <div className='font-semibold'>Modo de fase:</div>
               <div className='flex items-center gap-2'>
@@ -1313,7 +1507,6 @@ export default function Torneo() {
                       : 'bg-white hover:bg-gray-50'
                   }`}
                   onClick={() => cambiarModo('copas')}
-                  title='Cambiar a Copas'
                 >
                   Copas
                 </button>
@@ -1324,7 +1517,6 @@ export default function Torneo() {
                       : 'bg-white hover:bg-gray-50'
                   }`}
                   onClick={() => cambiarModo('playoffs')}
-                  title='Cambiar a Playoffs'
                 >
                   Playoffs
                 </button>
@@ -1335,16 +1527,6 @@ export default function Torneo() {
                 </div>
               )}
             </div>
-          ) : (
-            // Invitado ve solo una etiqueta del modo actual (si hay)
-            modoFase && (
-              <div className='rounded-2xl bg-white p-3 shadow-sm border inline-flex items-center gap-2'>
-                <span className='text-sm text-gray-600'>Modo:</span>
-                <span className='px-2 py-1 rounded-full text-xs font-medium bg-gray-900 text-white'>
-                  {modoFase === 'copas' ? 'Copas' : 'Playoffs'}
-                </span>
-              </div>
-            )
           )}
 
           {/* Panel COPAS */}
@@ -1431,15 +1613,24 @@ export default function Torneo() {
                         Elegir manualmente…
                       </button>
                       <button
+                        onClick={autoRellenarCopas}
+                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                      >
+                        Autorrellenar{' '}
+                        {gruposActivos.length >= 2
+                          ? 'por grupos'
+                          : 'por posiciones'}
+                      </button>
+                      <button
                         onClick={() =>
                           abrirModalFixtureCopa(
                             'copa-oro',
                             faseCopas?.oro || []
                           )
                         }
-                        className='mt-2 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm flex items-center gap-2'
+                        className='mt-2 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        <IconCalendar /> Generar mini-fixture (Oro)
+                        Generar mini-fixture (Oro)
                       </button>
                       <button
                         onClick={() =>
@@ -1448,9 +1639,9 @@ export default function Torneo() {
                             faseCopas?.plata || []
                           )
                         }
-                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm flex items-center gap-2'
+                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        <IconCalendar /> Generar mini-fixture (Plata)
+                        Generar mini-fixture (Plata)
                       </button>
                       <button
                         onClick={() =>
@@ -1459,9 +1650,9 @@ export default function Torneo() {
                             faseCopas?.bronce || []
                           )
                         }
-                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm flex items-center gap-2'
+                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        <IconCalendar /> Generar mini-fixture (Bronce)
+                        Generar mini-fixture (Bronce)
                       </button>
                     </div>
                   ) : (
@@ -1471,16 +1662,14 @@ export default function Torneo() {
               </div>
 
               {/* Partidos de copas */}
-              {Boolean(
-                cupMatches['copa-oro'].length ||
-                  cupMatches['copa-plata'].length ||
-                  cupMatches['copa-bronce'].length
-              ) && (
+              {(cupMatches['copa-oro'].length ||
+                cupMatches['copa-plata'].length ||
+                cupMatches['copa-bronce'].length) && (
                 <div className='mt-4 space-y-4'>
                   {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) =>
                     cupMatches[ck].length ? (
                       <div key={ck} className='space-y-2'>
-                        <div className='text-sm font-semibold text-gray-800'>
+                        <div className='text-sm font-medium text-gray-700'>
                           {ck === 'copa-oro'
                             ? 'Copa Oro'
                             : ck === 'copa-plata'
@@ -1511,81 +1700,6 @@ export default function Torneo() {
                             />
                           ))}
                         </div>
-
-                        {/* Tabla posiciones copa */}
-                        {(() => {
-                          const key =
-                            ck === 'copa-oro'
-                              ? 'oro'
-                              : ck === 'copa-plata'
-                              ? 'plata'
-                              : 'bronce';
-                          const rows = cupTables[key];
-                          return rows.length ? (
-                            <div className='bg-white rounded-xl border mt-2 overflow-x-auto'>
-                              <table className='min-w-full text-sm'>
-                                <thead className='bg-gray-50'>
-                                  <tr className='text-gray-600'>
-                                    <th className='text-left px-3 py-2'>#</th>
-                                    <th className='text-left px-3 py-2'>
-                                      Equipo
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      PJ
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      PG
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      PP
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      PF
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      PC
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      DIF
-                                    </th>
-                                    <th className='text-center px-3 py-2'>
-                                      PTS
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {rows.map((t, i) => (
-                                    <tr key={t.id} className='border-t'>
-                                      <td className='px-3 py-2'>{i + 1}</td>
-                                      <td className='px-3 py-2'>{t.nombre}</td>
-                                      <td className='px-3 py-2 text-center'>
-                                        {t.pj}
-                                      </td>
-                                      <td className='px-3 py-2 text-center'>
-                                        {t.pg}
-                                      </td>
-                                      <td className='px-3 py-2 text-center'>
-                                        {t.pp}
-                                      </td>
-                                      <td className='px-3 py-2 text-center'>
-                                        {t.pf}
-                                      </td>
-                                      <td className='px-3 py-2 text-center'>
-                                        {t.pc}
-                                      </td>
-                                      <td className='px-3 py-2 text-center'>
-                                        {t.dif}
-                                      </td>
-                                      <td className='px-3 py-2 text-center font-semibold'>
-                                        {t.pts}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : null;
-                        })()}
                       </div>
                     ) : null
                   )}
@@ -1601,41 +1715,18 @@ export default function Torneo() {
                 <div>
                   <h3 className='font-semibold text-lg'>Playoffs</h3>
                   <p className='text-sm text-gray-600'>
-                    Elegí cuántos entran (2, 4, 8, 16) y se arman cruces por
-                    siembra.
+                    Elegí cuántos entran (2, 4, 8, 16), programá hora/cancha y
+                    se arman cruces por siembra.
                   </p>
                 </div>
                 {canManage && (
-                  <div className='flex gap-2 flex-wrap justify-end'>
+                  <div className='flex gap-2'>
                     <button
                       onClick={abrirPOConfig}
                       className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                     >
                       <IconPlus /> Generar
                     </button>
-
-                    {/* Botones para programar rondas con fecha/hora/cancha */}
-                    {winnersOf('cuartos').length === 4 &&
-                      countRound('semi') < 2 && (
-                        <button
-                          onClick={() => openProgramNextRound('semi')}
-                          className='inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-black'
-                          title='Programar semifinales'
-                        >
-                          <IconCalendar /> Programar semifinales
-                        </button>
-                      )}
-                    {winnersOf('semi').length === 2 &&
-                      countRound('final') < 1 && (
-                        <button
-                          onClick={() => openProgramNextRound('final')}
-                          className='inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-black'
-                          title='Programar final'
-                        >
-                          <IconCalendar /> Programar final
-                        </button>
-                      )}
-
                     {fasePartidos.length > 0 && (
                       <button
                         onClick={borrarCrucesFaseFinal}
@@ -2019,7 +2110,6 @@ export default function Torneo() {
             <h3 className='text-lg font-semibold mb-3'>
               Asignar copas (manual)
             </h3>
-
             <form onSubmit={guardarCopasManual} className='space-y-4'>
               {/* Cupos */}
               <div className='rounded-xl border p-3'>
@@ -2050,19 +2140,21 @@ export default function Torneo() {
                       />
                     </label>
                   ))}
-
                   <button
                     type='button'
                     onClick={autoRellenarCopas}
                     className='ml-auto px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                    title='Autorrellenar desde posiciones'
+                    title='Autorrellenar'
                   >
-                    Autorrellenar por posiciones
+                    Autorrellenar{' '}
+                    {gruposActivos.length >= 2
+                      ? 'por grupos'
+                      : 'por posiciones'}
                   </button>
                 </div>
               </div>
 
-              {/* Selección de equipos */}
+              {/* Selección */}
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 {['oro', 'plata', 'bronce'].map((copa) => (
                   <div key={copa} className='rounded-xl border p-3'>
@@ -2128,7 +2220,7 @@ export default function Torneo() {
           onClick={() => setOpenCopaModal(false)}
         >
           <div
-            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
@@ -2143,55 +2235,50 @@ export default function Torneo() {
               onSubmit={guardarFixtureCopaConDetalles}
               className='space-y-3'
             >
-              <div className='max-h-[60vh] overflow-auto pr-1'>
-                {copaModalPairs.map((p, idx) => (
-                  <div key={idx} className='rounded-xl border p-3 mb-2'>
-                    <div className='text-sm font-medium mb-2'>
-                      {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
+              {copaModalPairs.map((p, idx) => (
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='text-sm font-medium mb-2'>
+                    {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
+                  </div>
+                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                    <div>
+                      <label className='text-sm'>Fecha & hora</label>
+                      <input
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        value={p.fecha}
+                        onChange={(e) =>
+                          setCopaModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = { ...copy[idx], fecha: e.target.value };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
                     </div>
-                    <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
-                      <div>
-                        <label className='text-sm'>Fecha & hora</label>
-                        <input
-                          type='datetime-local'
-                          className='mt-1 w-full rounded-xl border px-3 py-2'
-                          value={p.fecha}
-                          onChange={(e) =>
-                            setCopaModalPairs((arr) => {
-                              const copy = arr.slice();
-                              copy[idx] = {
-                                ...copy[idx],
-                                fecha: e.target.value,
-                              };
-                              return copy;
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                      <div className='md:col-span-2'>
-                        <label className='text-sm'>Cancha</label>
-                        <input
-                          className='mt-1 w-full rounded-xl border px-3 py-2'
-                          placeholder='Ej. Club A'
-                          value={p.cancha}
-                          onChange={(e) =>
-                            setCopaModalPairs((arr) => {
-                              const copy = arr.slice();
-                              copy[idx] = {
-                                ...copy[idx],
-                                cancha: e.target.value,
-                              };
-                              return copy;
-                            })
-                          }
-                          required
-                        />
-                      </div>
+                    <div className='md:col-span-2'>
+                      <label className='text-sm'>Cancha</label>
+                      <input
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
+                        value={p.cancha}
+                        onChange={(e) =>
+                          setCopaModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = {
+                              ...copy[idx],
+                              cancha: e.target.value,
+                            };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
 
               <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
@@ -2213,77 +2300,68 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Playoffs: Programar Semis/Final (fecha/hora/cancha) */}
-      {openPORoundModal && canManage && (
+      {/* Modal: Fixture por Grupo */}
+      {openGrupoModal && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
-          onClick={() => setOpenPORoundModal(false)}
+          onClick={() => setOpenGrupoModal(false)}
         >
           <div
-            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
-              {poRoundKey === 'semi'
-                ? 'Programar semifinales'
-                : 'Programar final'}
+              Programar cruces · Grupo {grupoModalKey}
             </h3>
-
-            <form onSubmit={guardarProgramacionRound} className='space-y-3'>
-              <div className='max-h-[60vh] overflow-auto pr-1'>
-                {poRoundItems.map((r, idx) => (
-                  <div key={idx} className='rounded-xl border p-3 mb-2'>
-                    <div className='text-sm font-medium mb-2'>
-                      {equiposMap[r.localId]} vs {equiposMap[r.visitanteId]}
+            <form onSubmit={guardarFixtureGrupo} className='space-y-3'>
+              {grupoModalPairs.map((p, idx) => (
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='text-sm font-medium mb-2'>
+                    {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
+                  </div>
+                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                    <div>
+                      <label className='text-sm'>Fecha & hora</label>
+                      <input
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        value={p.fecha}
+                        onChange={(e) =>
+                          setGrupoModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = { ...copy[idx], fecha: e.target.value };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
                     </div>
-                    <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
-                      <div>
-                        <label className='text-sm'>Fecha & hora</label>
-                        <input
-                          type='datetime-local'
-                          className='mt-1 w-full rounded-xl border px-3 py-2'
-                          value={r.fecha}
-                          onChange={(e) =>
-                            setPoRoundItems((arr) => {
-                              const copy = arr.slice();
-                              copy[idx] = {
-                                ...copy[idx],
-                                fecha: e.target.value,
-                              };
-                              return copy;
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                      <div className='md:col-span-2'>
-                        <label className='text-sm'>Cancha</label>
-                        <input
-                          className='mt-1 w-full rounded-xl border px-3 py-2'
-                          placeholder='Ej. Club A'
-                          value={r.cancha}
-                          onChange={(e) =>
-                            setPoRoundItems((arr) => {
-                              const copy = arr.slice();
-                              copy[idx] = {
-                                ...copy[idx],
-                                cancha: e.target.value,
-                              };
-                              return copy;
-                            })
-                          }
-                          required
-                        />
-                      </div>
+                    <div className='md:col-span-2'>
+                      <label className='text-sm'>Cancha</label>
+                      <input
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
+                        value={p.cancha}
+                        onChange={(e) =>
+                          setGrupoModalPairs((arr) => {
+                            const copy = arr.slice();
+                            copy[idx] = {
+                              ...copy[idx],
+                              cancha: e.target.value,
+                            };
+                            return copy;
+                          })
+                        }
+                        required
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-
+                </div>
+              ))}
               <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
                   type='button'
-                  onClick={() => setOpenPORoundModal(false)}
+                  onClick={() => setOpenGrupoModal(false)}
                   className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
@@ -2292,7 +2370,7 @@ export default function Torneo() {
                   type='submit'
                   className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                 >
-                  Guardar partidos
+                  Crear partidos
                 </button>
               </div>
             </form>
@@ -2300,7 +2378,7 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Playoffs config */}
+      {/* Playoffs config (con programación) */}
       {openPOConfig && canManage && (
         <div
           className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
@@ -2316,7 +2394,7 @@ export default function Torneo() {
               <div className='flex flex-wrap items-center gap-3'>
                 <span className='text-sm'>Cantidad de equipos:</span>
                 {[2, 4, 8, 16]
-                  .filter((n) => n <= posiciones.length)
+                  .filter((n) => n <= posicionesGenerales.length)
                   .map((n) => (
                     <label
                       key={n}
@@ -2330,14 +2408,14 @@ export default function Torneo() {
                         onChange={() => {
                           setPoN(n);
                           setPoSeleccion(
-                            posiciones.slice(0, n).map((t) => t.id)
+                            posicionesGenerales.slice(0, n).map((t) => t.id)
                           );
                         }}
                       />
                       <span>{n}</span>
                     </label>
                   ))}
-                {posiciones.length < 2 && (
+                {posicionesGenerales.length < 2 && (
                   <span className='text-xs text-gray-500'>
                     No hay suficientes equipos.
                   </span>
@@ -2349,7 +2427,7 @@ export default function Torneo() {
                   Seleccioná {poN} equipos
                 </div>
                 <div className='grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-auto pr-1'>
-                  {posiciones.map((t) => {
+                  {posicionesGenerales.map((t) => {
                     const checked = poSeleccion.includes(t.id);
                     const disabled = !checked && poSeleccion.length >= poN;
                     return (
@@ -2389,7 +2467,7 @@ export default function Torneo() {
                 <ul className='list-disc pl-5 text-sm text-gray-700'>
                   {(() => {
                     const rankIndex = new Map(
-                      posiciones.map((t, i) => [t.id, i])
+                      posicionesGenerales.map((t, i) => [t.id, i])
                     );
                     const ordered = poSeleccion
                       .slice()
