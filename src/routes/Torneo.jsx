@@ -122,6 +122,7 @@ const nameKey = (s = '') =>
   s
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 
@@ -236,6 +237,7 @@ function MatchRow({
             </span>
             <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
           </div>
+
           <div className='text-sm text-gray-500'>
             {fmtFecha(ts)}
             {cancha ? ` · ${cancha}` : ''}
@@ -318,8 +320,7 @@ export default function Torneo() {
   const [scoreLocal, setScoreLocal] = useState('');
   const [scoreVisitante, setScoreVisitante] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // Máximos anotadores (opcional, 1 por equipo)
+  // Máximos anotadores
   const [topLocalName, setTopLocalName] = useState('');
   const [topLocalPts, setTopLocalPts] = useState('');
   const [topVisName, setTopVisName] = useState('');
@@ -476,35 +477,6 @@ export default function Torneo() {
     return out;
   }, [resultados, equiposMap, gruposActivos]);
 
-  // Ranking de goleadores (a partir de tops por partido)
-  const goleadores = useMemo(() => {
-    const acc = {};
-    for (const p of resultados) {
-      const push = (side, teamId) => {
-        const t = p?.tops?.[side];
-        if (!t?.nombre) return;
-        const puntos = Number(t.puntos);
-        if (!Number.isFinite(puntos)) return;
-        const key = `${teamId}::${nameKey(t.nombre)}`;
-        if (!acc[key])
-          acc[key] = {
-            nombre: t.nombre.trim(),
-            equipoId: teamId,
-            equipo: equiposMap[teamId] || 'Equipo',
-            total: 0,
-            pj: 0,
-          };
-        acc[key].total += puntos;
-        acc[key].pj += 1;
-      };
-      push('local', p.localId);
-      push('visitante', p.visitanteId);
-    }
-    return Object.values(acc).sort(
-      (a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre)
-    );
-  }, [resultados, equiposMap]);
-
   const fixtureGrouped = useMemo(() => {
     const byDate = {};
     for (const p of fixture) {
@@ -561,7 +533,7 @@ export default function Torneo() {
     setScoreVisitante(
       Number.isFinite(match?.scoreVisitante) ? String(match.scoreVisitante) : ''
     );
-    // precarga máximos si existían
+    // precargar máximos si existían
     setTopLocalName(match?.tops?.local?.nombre || '');
     setTopLocalPts(
       Number.isFinite(match?.tops?.local?.puntos)
@@ -587,18 +559,15 @@ export default function Torneo() {
     setTopVisPts('');
     setSaving(false);
   };
-
   const saveResultado = async (e) => {
     e.preventDefault();
     if (!canManage || !editingMatch) return;
-
     const sl = Number(scoreLocal),
       sv = Number(scoreVisitante);
     if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0)
       return alert('Cargá puntajes válidos.');
     if (sl === sv) return alert('No se permiten empates.');
 
-    // validar puntos de máximos si vienen completos
     const lPts = topLocalPts === '' ? null : Number(topLocalPts);
     const vPts = topVisPts === '' ? null : Number(topVisPts);
     if (
@@ -607,7 +576,6 @@ export default function Torneo() {
     ) {
       return alert('Puntos de máximo anotador inválidos.');
     }
-
     const tops =
       topLocalName || topVisName
         ? {
@@ -636,7 +604,6 @@ export default function Torneo() {
       alert('No se pudo guardar el resultado.');
     }
   };
-
   const revertirResultado = async (matchId) => {
     if (!canManage) return;
     if (!confirm('¿Revertir este resultado a pendiente?')) return;
@@ -645,6 +612,7 @@ export default function Torneo() {
         estado: 'pendiente',
         scoreLocal: deleteField(),
         scoreVisitante: deleteField(),
+        tops: deleteField(),
         updatedAt: serverTimestamp(),
       });
     } catch (err) {
@@ -723,16 +691,18 @@ export default function Torneo() {
     }
   };
 
-  /* ---------- Modo Fase (mutuamente excluyente) ---------- */
-  const eliminarPlayoffs = async () => {
+  // Helpers usados por cambiarModo (declaración con hoisting)
+  async function eliminarPlayoffs() {
     const po = fasePartidos.filter(
       (m) => !String(m.fase || '').startsWith('copa-')
     );
     await Promise.all(
       po.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
-  };
-  const eliminarCopas = async () => {
+  }
+
+  // ✅ Renombrado para evitar colisión con la otra declaración
+  async function eliminarCopasFase() {
     const cups = fasePartidos.filter((m) =>
       String(m.fase || '').startsWith('copa-')
     );
@@ -741,10 +711,11 @@ export default function Torneo() {
     );
     try {
       await deleteDoc(doc(db, 'torneos', id, 'fases', 'copas'));
-    } catch {
-      /* puede no existir */
+    } catch (e) {
+      console.warn('Copas: no se pudo eliminar (puede no existir):', e);
     }
-  };
+  }
+
   const cambiarModo = async (nuevo) => {
     if (!canManage) return;
     if (nuevo === modoFase) return;
@@ -760,6 +731,7 @@ export default function Torneo() {
           )
         )
           return;
+
         await eliminarPlayoffs();
       } else if (nuevo === 'playoffs') {
         const hayCopas =
@@ -772,8 +744,10 @@ export default function Torneo() {
           )
         )
           return;
-        await eliminarCopas();
+
+        await eliminarCopasFase();
       }
+
       await setDoc(
         doc(db, 'torneos', id, 'fases', 'config'),
         { modo: nuevo, updatedAt: serverTimestamp() },
@@ -872,7 +846,7 @@ export default function Torneo() {
     setCopasSel({ oro, plata, bronce });
   };
 
-  // Autorrellenar desde grupos: 1º→oro, 2º→plata, 3º→bronce (respetando cupos)
+  // Autorrellenar desde grupos
   const autoRellenarCopasDesdeGrupos = () => {
     const oro = [],
       plata = [],
@@ -1121,7 +1095,6 @@ export default function Torneo() {
         return alert('Completá la cancha en todos los partidos.');
     }
     try {
-      // borrar pendientes del grupo que no son fase (regular)
       const existentes = partidos.filter(
         (m) => !m.fase && (m.grupo || '').toUpperCase() === grupoModalKey
       );
@@ -1158,16 +1131,45 @@ export default function Torneo() {
     'fixture',
     'resultados',
     'posiciones',
-    'goleadores', // 👈 nueva pestaña
+    'goleadores', // nueva pestaña
     'equipos',
     ...(admin || hayFaseFinal ? ['fase'] : []),
   ];
 
+  // Ranking de goleadores (a partir de tops por partido)
+  const goleadores = useMemo(() => {
+    const acc = {};
+    for (const p of resultados) {
+      const push = (side, teamId) => {
+        const t = p?.tops?.[side];
+        if (!t?.nombre) return;
+        const puntos = Number(t.puntos);
+        if (!Number.isFinite(puntos)) return;
+        const key = `${teamId}::${nameKey(t.nombre)}`;
+        if (!acc[key])
+          acc[key] = {
+            nombre: t.nombre.trim(),
+            equipoId: teamId,
+            equipo: equiposMap[teamId] || 'Equipo',
+            total: 0,
+            pj: 0,
+          };
+        acc[key].total += puntos;
+        acc[key].pj += 1;
+      };
+      push('local', p.localId);
+      push('visitante', p.visitanteId);
+    }
+    return Object.values(acc).sort(
+      (a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre)
+    );
+  }, [resultados, equiposMap]);
+
   return (
     <div className='space-y-5'>
-      {/* Header */}
-      <div className='rounded-2xl p-[1px] bg-gradient-to-r from-blue-200 via-purple-200 to-pink-200'>
-        <div className='rounded-2xl bg-white/80 backdrop-blur-sm p-4 sm:p-5'>
+      {/* Header (glass, usa fondo global del body) */}
+      <div className='rounded-2xl p-[1px] bg-gradient-to-r from-blue-200/60 via-purple-200/60 to-pink-200/60'>
+        <div className='rounded-2xl bg-white/70 backdrop-blur-md p-4 sm:p-5 border border-white/40'>
           <div className='flex items-center justify-between gap-3'>
             <div className='flex items-center gap-2'>
               <button
@@ -1194,7 +1196,7 @@ export default function Torneo() {
             </div>
 
             <div className='flex items-center gap-2'>
-              <div className='hidden sm:block text-sm text-gray-500 mr-2'>
+              <div className='hidden sm:block text-sm text-gray-700 mr-2'>
                 {equipos.length} equipos · {partidos.length} partidos
               </div>
               {canManage && (
@@ -1238,7 +1240,7 @@ export default function Torneo() {
                   fixture: 'Fixture',
                   resultados: 'Resultados',
                   posiciones: 'Posiciones',
-                  goleadores: 'Máximos goleadores', // 👈
+                  goleadores: 'Máximos goleadores',
                   equipos: 'Equipos',
                   fase: 'Fase final',
                 }[t]
@@ -1320,7 +1322,7 @@ export default function Torneo() {
                 cancha={p.cancha}
                 canManage={canManage}
                 isResult
-                tops={p.tops} // 👈
+                tops={p.tops}
                 onEditScore={() => openResultado(p)}
                 onDelete={() => solicitarBorrarPartido(p)}
                 onRevert={() => revertirResultado(p.id)}
@@ -1333,7 +1335,6 @@ export default function Torneo() {
       {/* POSICIONES */}
       {!loading && tab === 'posiciones' && (
         <>
-          {/* Si hay 2+ grupos => mostrar tablas por grupo y ocultar tabla general */}
           {gruposActivos.length >= 2 ? (
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               {gruposActivos.map((g) => (
@@ -1453,6 +1454,7 @@ export default function Torneo() {
           )}
         </>
       )}
+
       {/* GOLEADORES */}
       {!loading && tab === 'goleadores' && (
         <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
@@ -1527,7 +1529,7 @@ export default function Torneo() {
                   key={e.id}
                   className='bg-white rounded-2xl shadow-sm border p-4 flex flex-col gap-3'
                 >
-                  {/* Encabezado: avatar + nombre + chip del grupo actual */}
+                  {/* Encabezado */}
                   <div className='flex items-center gap-3 min-w-0'>
                     <Avatar name={e.nombre} logoUrl={e.logoUrl} size={28} />
                     <div className='font-medium truncate'>{e.nombre}</div>
@@ -1542,7 +1544,7 @@ export default function Torneo() {
                     )}
                   </div>
 
-                  {/* Contenido: selector de grupo con ancho completo (solo admin) */}
+                  {/* Selector de grupo (SOLO admin) */}
                   {canManage && (
                     <div>
                       <label className='text-xs text-gray-500'>
@@ -1556,7 +1558,6 @@ export default function Torneo() {
                           const val = ev.target.value;
 
                           if (val === '__nuevo__') {
-                            // sugerencia automática A, B, C...
                             const letras = gruposActivos.filter((g) =>
                               /^[A-Z]$/.test(g)
                             );
@@ -1626,7 +1627,8 @@ export default function Torneo() {
                       </select>
                     </div>
                   )}
-                  {/* Footer: acciones ABAJO */}
+
+                  {/* Footer */}
                   {canManage && (
                     <div className='flex items-center justify-end gap-2 pt-1'>
                       <button
@@ -1649,7 +1651,7 @@ export default function Torneo() {
       {/* FASE FINAL */}
       {!loading && tab === 'fase' && (
         <div className='space-y-3'>
-          {/* Selector de modo (oculto al invitado) */}
+          {/* Selector de modo */}
           {canManage && (
             <div className='rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap'>
               <div className='font-semibold'>Modo de fase:</div>
@@ -1815,7 +1817,6 @@ export default function Torneo() {
                 </div>
               </div>
 
-              {/* Partidos de copas */}
               {(cupMatches['copa-oro'].length ||
                 cupMatches['copa-plata'].length ||
                 cupMatches['copa-bronce'].length) && (
@@ -1844,6 +1845,7 @@ export default function Torneo() {
                               cancha={p.cancha}
                               canManage={canManage}
                               isResult={p.estado === 'finalizado'}
+                              tops={p.tops}
                               onEditScore={() => openResultado(p)}
                               onDelete={() => solicitarBorrarPartido(p)}
                               onRevert={
@@ -1919,6 +1921,7 @@ export default function Torneo() {
                             cancha={p.cancha}
                             canManage={canManage}
                             isResult={p.estado === 'finalizado'}
+                            tops={p.tops}
                             onEditScore={() => openResultado(p)}
                             onDelete={() => solicitarBorrarPartido(p)}
                             onRevert={
@@ -1982,7 +1985,7 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200'
                     value={scoreLocal}
                     onChange={(e) => setScoreLocal(e.target.value)}
                     required
@@ -1996,7 +1999,7 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200'
                     value={scoreVisitante}
                     onChange={(e) => setScoreVisitante(e.target.value)}
                     required
@@ -2004,7 +2007,7 @@ export default function Torneo() {
                 </div>
               </div>
 
-              {/* Máximos anotadores (opcional) */}
+              {/* Máximos anotadores */}
               <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div className='rounded-xl border p-3'>
                   <div className='text-xs text-gray-600 mb-1'>
@@ -2185,7 +2188,7 @@ export default function Torneo() {
                 const nombre = (teamForm.nombre || '').trim();
                 if (!nombre) return alert('Poné un nombre de equipo.');
 
-                // usar el helper global nameKey para detectar duplicados
+                // Bloquear duplicados por nombre (ignora mayúsculas/acentos/espacios)
                 const key = nameKey(nombre);
                 const existe = equipos.some(
                   (t) => nameKey(t.nombre || '') === key
@@ -2200,8 +2203,7 @@ export default function Torneo() {
                 addDoc(collection(db, 'torneos', id, 'equipos'), {
                   nombre,
                   logoUrl: (teamForm.logoUrl || '').trim(),
-                  // opcional: guardar la llave normalizada
-                  nombreKey: key,
+                  nombreKey: key, // opcional
                   createdAt: serverTimestamp(),
                 })
                   .then(() => setOpenTeam(false))

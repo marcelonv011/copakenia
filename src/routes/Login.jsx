@@ -1,149 +1,105 @@
 // src/routes/Login.jsx
-import { useEffect, useState } from 'react';
-import { auth } from '../firebase';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
+  onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  setPersistence,
-  browserLocalPersistence,
-  signOut,
 } from 'firebase/auth';
+import { auth } from '../firebase';
 
-const IconGoogle = (props) => (
-  <svg viewBox='0 0 48 48' width='20' height='20' {...props}>
-    <path
-      fill='#FFC107'
-      d='M43.6 20.5H42V20H24v8h11.3C33.9 31.7 29.5 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 3l5.7-5.7C34 5.1 29.3 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.1-.4-3.5z'
-    />
-    <path
-      fill='#FF3D00'
-      d='M6.3 14.7l6.6 4.8C14.8 16 19 13 24 13c3 0 5.7 1.1 7.8 3l5.7-5.7C34 5.1 29.3 3 24 3 16.1 3 9.3 7.4 6.3 14.7z'
-    />
-    <path
-      fill='#4CAF50'
-      d='M24 45c5.3 0 10.1-2 13.7-5.3l-6.3-5.2C29.3 36.6 26.8 37.5 24 37.5c-5.5 0-9.9-3.4-11.6-8.1l-6.6 5.1C8.8 40.3 15.9 45 24 45z'
-    />
-    <path
-      fill='#1976D2'
-      d='M43.6 20.5H42V20H24v8h11.3c-1.1 3.3-3.7 5.9-7 7.2l-6.3 5.2C36.2 42.9 42 38.4 44.6 31.9c.8-2.1 1.3-4.4 1.3-6.9 0-1.2-.1-2.1-.3-3.5z'
-    />
-  </svg>
-);
+const provider = new GoogleAuthProvider();
 
 export default function Login() {
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState('');
+  const navigate = useNavigate();
 
-  // Al volver del redirect, Firebase entrega el resultado aquí
+  // Si ya está logueado, mandamos a /torneos
   useEffect(() => {
-    getRedirectResult(auth)
-      .then((res) => {
-        if (res?.user) window.location.assign('/torneos');
-      })
-      .catch((e) => {
-        console.error('getRedirectResult:', e);
-        setErr(describirAuthError(e));
-      });
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) navigate('/torneos', { replace: true });
+    });
+    return () => unsub();
+  }, [navigate]);
+
+  // Maneja el retorno de signInWithRedirect (iOS / popups bloqueados)
+  useEffect(() => {
+    getRedirectResult(auth).catch((e) => {
+      // no hace falta alert acá; solo log por si hay diagnóstico
+      console.error('getRedirectResult error:', e);
+    });
   }, []);
 
-  const signInGoogle = async () => {
-    setErr('');
-    setLoading(true);
-
-    const provider = new GoogleAuthProvider();
-    // 👇 obliga a mostrar el selector SIEMPRE
-    provider.setCustomParameters({ prompt: 'select_account' });
-
+  const login = async () => {
     try {
-      // cerramos sesión actual para que Google muestre el chooser
-      try {
-        await signOut(auth);
-      } catch {
-        /* ignoramos si no había sesión */
-      }
-
-      await setPersistence(auth, browserLocalPersistence);
-
-      // 1) intentar popup
+      // 1) Popup (rápido en desktop)
       await signInWithPopup(auth, provider);
-      window.location.assign('/torneos');
-    } catch (e) {
-      // 2) fallback a redirect
-      const code = e?.code || '';
-      if (
-        code.includes('popup-blocked') ||
-        code.includes('popup-closed-by-user') ||
-        code.includes('operation-not-supported-in-this-environment')
-      ) {
-        try {
-          await signInWithRedirect(auth, provider);
-          return;
-        } catch (er) {
-          console.error('signInWithRedirect:', er);
-          setErr(describirAuthError(er));
-        }
-      } else {
-        console.error('signInWithPopup:', e);
-        setErr(describirAuthError(e));
+      navigate('/torneos', { replace: true });
+    } catch {
+      // 2) Fallback: redirect (iOS / popups bloqueados)
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (e2) {
+        console.error(e2);
+        alert('No se pudo iniciar sesión.');
       }
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
-    <div className='min-h-screen grid place-items-center bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50'>
-      <div className='w-full max-w-md p-[1px] rounded-2xl bg-gradient-to-r from-blue-200 via-purple-200 to-pink-200'>
-        <div className='rounded-2xl bg-white p-6'>
-          <div className='text-center mb-6'>
-            <h1 className='text-2xl font-bold'>Copa Kenia</h1>
-            <p className='text-sm text-gray-600'>
-              Accedé con tu cuenta de Google
-            </p>
+    <div className='min-h-[70vh] grid place-items-center'>
+      <div className='relative w-full max-w-4xl'>
+        <div className='absolute inset-0 rounded-[28px] bg-white/40 backdrop-blur-md' />
+        <div className='relative rounded-[28px] border border-white/60 shadow-2xl bg-white/70 p-6 sm:p-10'>
+          <h1 className='text-4xl sm:text-6xl font-black tracking-tight text-gray-900 text-center drop-shadow'>
+            Copa Kenia
+          </h1>
+          <p className='text-center text-gray-600 mt-3 text-lg'>
+            Accedé con tu cuenta de Google
+          </p>
+
+          <div className='mt-8 flex justify-center'>
+            <button
+              onClick={login}
+              className='w-full sm:w-[720px] inline-flex items-center justify-center gap-3 rounded-2xl px-6 py-4 text-base sm:text-lg font-semibold text-white bg-[#101728] hover:bg-[#0c1220] transition shadow-lg'
+            >
+              <svg
+                xmlns='http://www.w3.org/2000/svg'
+                viewBox='0 0 48 48'
+                className='w-6 h-6'
+              >
+                <path
+                  fill='#FFC107'
+                  d='M43.611,20.083H42V20H24v8h11.303C33.538,32.675,29.163,36,24,36c-6.627,0-12-5.373-12-12
+                  s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.869,5.053,29.702,3,24,3C12.955,3,4,11.955,4,23
+                  s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z'
+                />
+                <path
+                  fill='#FF3D00'
+                  d='M6.306,14.691l6.571,4.819C14.655,16.108,18.961,13,24,13c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657
+                  C34.869,5.053,29.702,3,24,3C16.318,3,9.656,7.337,6.306,14.691z'
+                />
+                <path
+                  fill='#4CAF50'
+                  d='M24,43c5.114,0,9.728-1.953,13.191-5.129l-6.084-4.985C29.054,34.091,26.671,35,24,35
+                  c-5.132,0-9.494-3.317-11.065-7.946l-6.53,5.03C9.705,38.556,16.338,43,24,43z'
+                />
+                <path
+                  fill='#1976D2'
+                  d='M43.611,20.083H42V20H24v8h11.303c-1.084,3.105-3.282,5.489-6.196,6.886l0.001-0.001l6.084,4.985
+                  C33.03,40.205,38,36,38,23C38,22.659,43.862,21.35,43.611,20.083z'
+                />
+              </svg>
+              Continuar con Google
+            </button>
           </div>
 
-          {err && (
-            <div className='mb-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-2'>
-              {err}
-            </div>
-          )}
-
-          <button
-            onClick={signInGoogle}
-            disabled={loading}
-            className='w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white bg-gray-900 hover:bg-black disabled:opacity-60'
-          >
-            <IconGoogle />
-            {loading ? 'Conectando…' : 'Continuar con Google'}
-          </button>
-
-          <div className='mt-6 text-xs text-gray-500 text-center'>
+          <p className='text-center text-sm text-gray-500 mt-6'>
             Al continuar, aceptás los términos del torneo.
-          </div>
+          </p>
         </div>
       </div>
     </div>
   );
-}
-
-function describirAuthError(e) {
-  const code = e?.code || '';
-  if (code.includes('unauthorized-domain')) {
-    return 'Dominio no autorizado en Firebase Auth. Agregá "localhost" y "127.0.0.1" en Authentication → Settings → Authorized domains.';
-  }
-  if (code.includes('operation-not-allowed')) {
-    return 'Proveedor Google deshabilitado. Habilitalo en Authentication → Sign-in method → Google.';
-  }
-  if (code.includes('network-request-failed')) {
-    return 'Fallo de red. Revisá conexión y ad-blockers.';
-  }
-  if (code.includes('internal-error')) {
-    return 'Error interno del navegador/SDK. Probá ventana privada o limpiar cookies de accounts.google.com.';
-  }
-  if (code.includes('popup')) {
-    return 'El navegador bloqueó el popup. Probamos con redirección; si persiste, desactiva el bloqueador.';
-  }
-  return 'No se pudo iniciar sesión. Revisá consola para más detalles.';
 }

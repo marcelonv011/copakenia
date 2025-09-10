@@ -1,1 +1,110 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========= Fondo global con la copa ========= */
+.app-bg {
+  position: relative;
+  min-height: 100vh;
+  isolation: isolate; /* stacking context */
+}
+
+/* Copa + viñetas + velo para mejorar la lectura */
+.app-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(
+      35% 35% at 0% 100%,
+      rgba(0, 0, 0, 0.2),
+      transparent 60%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0) 40%,
+      rgba(255, 255, 255, 0.3) 100%
+    ),
+    url('/copa.jpeg') center / cover no-repeat; /* /public/copa.jpeg */
+  filter: saturate(1.03) contrast(1.01);
+  opacity: 0.33;
+  z-index: -2;
+  pointer-events: none;
+}
+
+/* iOS/Android webview: evita salto del background */
+@supports (-webkit-touch-callout: none) {
+  .app-bg::before {
+    background-attachment: scroll;
+  }
+}
+
+/* ========= Estilo común ========= */
+
+/* Nav “glass” con leve brillo */
+.nav-glass {
+  border-radius: 1rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.86),
+    rgba(255, 255, 255, 0.68)
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 10px 26px rgba(16, 24, 40, 0.12);
+}
+
+/* Chip de marca (logo + texto) siempre legible */
+.logo-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.96),
+    rgba(255, 255, 255, 0.88)
+  );
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 6px 16px rgba(16, 24, 40, 0.08);
+}
+
+/* Tarjetas “glass” reutilizables (login, modales, etc.) */
+.glass-card {
+  border-radius: 1.25rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.82),
+    rgba(255, 255, 255, 0.62)
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* Sombrilla sutil para títulos */
+.title-shadow {
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+/* Botón primario elegante */
+.btn-primary {
+  @apply w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-white text-base;
+  background: linear-gradient(135deg, #0f172a, #111827);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.25);
+  transition: transform 0.06s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(2, 6, 23, 0.3);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* 🔻 Eliminado: NO hay sticker/logo en la esquina */
