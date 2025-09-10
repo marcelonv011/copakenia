@@ -2011,7 +2011,7 @@ export default function Torneo() {
               <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div className='rounded-xl border p-3'>
                   <div className='text-xs text-gray-600 mb-1'>
-                    Máximo {equiposMap[editingMatch.localId] || 'Local'}
+                    Máximo anotador del equipo: {equiposMap[editingMatch.localId] || 'Local'}
                   </div>
                   <input
                     className='w-full rounded-xl border px-3 py-2 mb-2'
@@ -2031,7 +2031,7 @@ export default function Torneo() {
                 </div>
                 <div className='rounded-xl border p-3'>
                   <div className='text-xs text-gray-600 mb-1'>
-                    Máximo {equiposMap[editingMatch.visitanteId] || 'Visitante'}
+                    Máximo anotador del equipo: {equiposMap[editingMatch.visitanteId] || 'Visitante'}
                   </div>
                   <input
                     className='w-full rounded-xl border px-3 py-2 mb-2'

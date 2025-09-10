@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
-import brand from './img/logos.png'; // tu imagen con ambos escudos
+
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -35,11 +35,6 @@ export default function App() {
             title='Copa Kenia'
           >
             {/* 👇 Mantiene proporción del archivo (no lo recorta) */}
-            <img
-              src={brand}
-              alt='Copa Kenia'
-              className='h-9 w-auto rounded-md shadow-sm'
-            />
             <span className='text-xl sm:text-2xl font-bold tracking-tight text-gray-900'>
               Copa Kenia
             </span>

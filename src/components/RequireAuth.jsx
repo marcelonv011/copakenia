@@ -1,27 +1,33 @@
 // src/components/RequireAuth.jsx
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 
-export default function RequireAuth() {
-  const [user, setUser] = useState(undefined); // undefined = cargando
-  const loc = useLocation();
+export default function RequireAuth({ children }) {
+  // loading | in | out
+  const [status, setStatus] = useState('loading');
+  const location = useLocation();
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setStatus(u ? 'in' : 'out');
+    });
     return () => unsub();
   }, []);
 
-  if (user === undefined) {
+  if (status === 'loading') {
     return (
-      <div className='min-h-screen grid place-items-center text-gray-600'>
+      <div className='min-h-[50vh] grid place-items-center text-gray-600'>
         Cargando…
       </div>
     );
   }
-  if (!user) {
-    return <Navigate to='/login' state={{ from: loc }} replace />;
+
+  if (status === 'out') {
+    // Guarda a dónde quería ir, por si luego querés volver
+    return <Navigate to='/login' replace state={{ from: location }} />;
   }
-  return <Outlet />;
+
+  return children;
 }

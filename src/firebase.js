@@ -22,3 +22,4 @@ export const db = getFirestore(app);
 export const provider = new GoogleAuthProvider();
 export const loginWithGoogle = () => signInWithPopup(auth, provider);
 export const logout = () => signOut(auth);
+provider.setCustomParameters({ prompt: 'select_account' });
