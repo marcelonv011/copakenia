@@ -117,6 +117,14 @@ const EquipoTag = ({ nombre, logoUrl }) => (
   </span>
 );
 
+/* Normalizar nombre para comparaciones (case/acentos/espacios) */
+const nameKey = (s = '') =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
 /* Fecha/hora */
 function fmtFecha(ts) {
   if (!ts) return 'Sin fecha';
@@ -198,6 +206,7 @@ function MatchRow({
   onRevert,
   canManage,
   isResult = false,
+  tops,
 }) {
   const logoL = equipos.find((e) => e.id === localId)?.logoUrl;
   const logoV = equipos.find((e) => e.id === visitanteId)?.logoUrl;
@@ -227,11 +236,27 @@ function MatchRow({
             </span>
             <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
           </div>
-
           <div className='text-sm text-gray-500'>
             {fmtFecha(ts)}
             {cancha ? ` · ${cancha}` : ''}
           </div>
+
+          {isResult && (tops?.local?.nombre || tops?.visitante?.nombre) && (
+            <div className='mt-1 text-sm text-gray-700'>
+              {tops?.local?.nombre && (
+                <span className='mr-3'>
+                  <b>{equiposMap[localId] || 'Local'}:</b> {tops.local.nombre} (
+                  {tops.local.puntos ?? 0})
+                </span>
+              )}
+              {tops?.visitante?.nombre && (
+                <span>
+                  <b>{equiposMap[visitanteId] || 'Visitante'}:</b>{' '}
+                  {tops.visitante.nombre} ({tops.visitante.puntos ?? 0})
+                </span>
+              )}
+            </div>
+          )}
 
           {canManage && (
             <div className='flex flex-col sm:flex-row gap-2 mt-3'>
@@ -293,6 +318,12 @@ export default function Torneo() {
   const [scoreLocal, setScoreLocal] = useState('');
   const [scoreVisitante, setScoreVisitante] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Máximos anotadores (opcional, 1 por equipo)
+  const [topLocalName, setTopLocalName] = useState('');
+  const [topLocalPts, setTopLocalPts] = useState('');
+  const [topVisName, setTopVisName] = useState('');
+  const [topVisPts, setTopVisPts] = useState('');
 
   /* Nuevo partido/equipo (modales) */
   const [openMatch, setOpenMatch] = useState(false);
@@ -445,6 +476,35 @@ export default function Torneo() {
     return out;
   }, [resultados, equiposMap, gruposActivos]);
 
+  // Ranking de goleadores (a partir de tops por partido)
+  const goleadores = useMemo(() => {
+    const acc = {};
+    for (const p of resultados) {
+      const push = (side, teamId) => {
+        const t = p?.tops?.[side];
+        if (!t?.nombre) return;
+        const puntos = Number(t.puntos);
+        if (!Number.isFinite(puntos)) return;
+        const key = `${teamId}::${nameKey(t.nombre)}`;
+        if (!acc[key])
+          acc[key] = {
+            nombre: t.nombre.trim(),
+            equipoId: teamId,
+            equipo: equiposMap[teamId] || 'Equipo',
+            total: 0,
+            pj: 0,
+          };
+        acc[key].total += puntos;
+        acc[key].pj += 1;
+      };
+      push('local', p.localId);
+      push('visitante', p.visitanteId);
+    }
+    return Object.values(acc).sort(
+      (a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre)
+    );
+  }, [resultados, equiposMap]);
+
   const fixtureGrouped = useMemo(() => {
     const byDate = {};
     for (const p of fixture) {
@@ -501,6 +561,19 @@ export default function Torneo() {
     setScoreVisitante(
       Number.isFinite(match?.scoreVisitante) ? String(match.scoreVisitante) : ''
     );
+    // precarga máximos si existían
+    setTopLocalName(match?.tops?.local?.nombre || '');
+    setTopLocalPts(
+      Number.isFinite(match?.tops?.local?.puntos)
+        ? String(match.tops.local.puntos)
+        : ''
+    );
+    setTopVisName(match?.tops?.visitante?.nombre || '');
+    setTopVisPts(
+      Number.isFinite(match?.tops?.visitante?.puntos)
+        ? String(match.tops.visitante.puntos)
+        : ''
+    );
     setOpenResult(true);
   };
   const closeResultado = () => {
@@ -508,22 +581,52 @@ export default function Torneo() {
     setEditingMatch(null);
     setScoreLocal('');
     setScoreVisitante('');
+    setTopLocalName('');
+    setTopLocalPts('');
+    setTopVisName('');
+    setTopVisPts('');
     setSaving(false);
   };
+
   const saveResultado = async (e) => {
     e.preventDefault();
     if (!canManage || !editingMatch) return;
+
     const sl = Number(scoreLocal),
       sv = Number(scoreVisitante);
     if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0)
       return alert('Cargá puntajes válidos.');
     if (sl === sv) return alert('No se permiten empates.');
+
+    // validar puntos de máximos si vienen completos
+    const lPts = topLocalPts === '' ? null : Number(topLocalPts);
+    const vPts = topVisPts === '' ? null : Number(topVisPts);
+    if (
+      (topLocalName && !Number.isFinite(lPts)) ||
+      (topVisName && !Number.isFinite(vPts))
+    ) {
+      return alert('Puntos de máximo anotador inválidos.');
+    }
+
+    const tops =
+      topLocalName || topVisName
+        ? {
+            local: topLocalName
+              ? { nombre: topLocalName.trim(), puntos: lPts ?? 0 }
+              : undefined,
+            visitante: topVisName
+              ? { nombre: topVisName.trim(), puntos: vPts ?? 0 }
+              : undefined,
+          }
+        : undefined;
+
     try {
       setSaving(true);
       await updateDoc(doc(db, 'torneos', id, 'partidos', editingMatch.id), {
         scoreLocal: sl,
         scoreVisitante: sv,
         estado: 'finalizado',
+        ...(tops ? { tops } : {}),
         updatedAt: serverTimestamp(),
       });
       closeResultado();
@@ -533,6 +636,7 @@ export default function Torneo() {
       alert('No se pudo guardar el resultado.');
     }
   };
+
   const revertirResultado = async (matchId) => {
     if (!canManage) return;
     if (!confirm('¿Revertir este resultado a pendiente?')) return;
@@ -1054,6 +1158,7 @@ export default function Torneo() {
     'fixture',
     'resultados',
     'posiciones',
+    'goleadores', // 👈 nueva pestaña
     'equipos',
     ...(admin || hayFaseFinal ? ['fase'] : []),
   ];
@@ -1133,6 +1238,7 @@ export default function Torneo() {
                   fixture: 'Fixture',
                   resultados: 'Resultados',
                   posiciones: 'Posiciones',
+                  goleadores: 'Máximos goleadores', // 👈
                   equipos: 'Equipos',
                   fase: 'Fase final',
                 }[t]
@@ -1214,6 +1320,7 @@ export default function Torneo() {
                 cancha={p.cancha}
                 canManage={canManage}
                 isResult
+                tops={p.tops} // 👈
                 onEditScore={() => openResultado(p)}
                 onDelete={() => solicitarBorrarPartido(p)}
                 onRevert={() => revertirResultado(p.id)}
@@ -1346,6 +1453,50 @@ export default function Torneo() {
           )}
         </>
       )}
+      {/* GOLEADORES */}
+      {!loading && tab === 'goleadores' && (
+        <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
+          <table className='min-w-full text-sm'>
+            <thead className='bg-gray-50'>
+              <tr className='text-gray-600'>
+                <th className='text-left px-4 py-2'>#</th>
+                <th className='text-left px-4 py-2'>Jugador</th>
+                <th className='text-left px-4 py-2'>Equipo</th>
+                <th className='text-center px-4 py-2'>PTS tot</th>
+                <th className='text-center px-4 py-2'>PJ</th>
+                <th className='text-center px-4 py-2'>Prom.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {goleadores.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className='text-center text-gray-500 px-4 py-6'
+                  >
+                    Todavía no hay máximos anotadores cargados.
+                  </td>
+                </tr>
+              ) : (
+                goleadores.map((g, i) => (
+                  <tr key={`${g.equipoId}-${g.nombre}`} className='border-t'>
+                    <td className='px-4 py-2'>{i + 1}</td>
+                    <td className='px-4 py-2'>{g.nombre}</td>
+                    <td className='px-4 py-2'>{g.equipo}</td>
+                    <td className='px-4 py-2 text-center font-semibold'>
+                      {g.total}
+                    </td>
+                    <td className='px-4 py-2 text-center'>{g.pj}</td>
+                    <td className='px-4 py-2 text-center'>
+                      {g.pj ? (g.total / g.pj).toFixed(1) : '—'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* EQUIPOS */}
       {!loading && tab === 'equipos' && (
@@ -1391,49 +1542,70 @@ export default function Torneo() {
                     )}
                   </div>
 
-                  {/* Contenido: selector de grupo con ancho completo */}
-                  <div>
-                    <label className='text-xs text-gray-500'>
-                      Cambiar grupo
-                    </label>
-                    <select
-                      className='mt-1 w-full rounded-xl border px-3 py-2 text-sm'
-                      value={(e.grupo || '').toUpperCase()}
-                      onChange={async (ev) => {
-                        const prev = (e.grupo || '').toUpperCase();
-                        const val = ev.target.value;
+                  {/* Contenido: selector de grupo con ancho completo (solo admin) */}
+                  {canManage && (
+                    <div>
+                      <label className='text-xs text-gray-500'>
+                        Cambiar grupo
+                      </label>
+                      <select
+                        className='mt-1 w-full rounded-xl border px-3 py-2 text-sm'
+                        value={(e.grupo || '').toUpperCase()}
+                        onChange={async (ev) => {
+                          const prev = (e.grupo || '').toUpperCase();
+                          const val = ev.target.value;
 
-                        if (val === '__nuevo__') {
-                          // sugerencia automática A, B, C...
-                          const letras = gruposActivos.filter((g) =>
-                            /^[A-Z]$/.test(g)
-                          );
-                          let sugerida = 'A';
-                          for (let i = 0; i < 26; i++) {
-                            const L = String.fromCharCode(65 + i);
-                            if (!letras.includes(L)) {
-                              sugerida = L;
-                              break;
+                          if (val === '__nuevo__') {
+                            // sugerencia automática A, B, C...
+                            const letras = gruposActivos.filter((g) =>
+                              /^[A-Z]$/.test(g)
+                            );
+                            let sugerida = 'A';
+                            for (let i = 0; i < 26; i++) {
+                              const L = String.fromCharCode(65 + i);
+                              if (!letras.includes(L)) {
+                                sugerida = L;
+                                break;
+                              }
                             }
-                          }
-                          const ingresado = prompt(
-                            'Código de grupo (ej. E, F, G, G1, Zona Norte):',
-                            sugerida
-                          );
-                          const g = (ingresado || '')
-                            .trim()
-                            .toUpperCase()
-                            .slice(0, 12);
-                          if (!g) {
-                            ev.target.value = prev;
+                            const ingresado = prompt(
+                              'Código de grupo (ej. E, F, G, G1, Zona Norte):',
+                              sugerida
+                            );
+                            const g = (ingresado || '')
+                              .trim()
+                              .toUpperCase()
+                              .slice(0, 12);
+                            if (!g) {
+                              ev.target.value = prev;
+                              return;
+                            }
+
+                            try {
+                              await updateDoc(
+                                doc(db, 'torneos', id, 'equipos', e.id),
+                                {
+                                  grupo: g,
+                                  updatedAt: serverTimestamp(),
+                                }
+                              );
+                            } catch (err) {
+                              console.error(err);
+                              alert('No se pudo actualizar el grupo.');
+                              ev.target.value = prev;
+                            }
                             return;
                           }
 
+                          // guardar grupo existente (o limpiar)
+                          const g = val || null;
                           try {
                             await updateDoc(
                               doc(db, 'torneos', id, 'equipos', e.id),
                               {
-                                grupo: g,
+                                ...(g
+                                  ? { grupo: g }
+                                  : { grupo: deleteField() }),
                                 updatedAt: serverTimestamp(),
                               }
                             );
@@ -1442,36 +1614,18 @@ export default function Torneo() {
                             alert('No se pudo actualizar el grupo.');
                             ev.target.value = prev;
                           }
-                          return;
-                        }
-
-                        // guardar grupo existente (o limpiar)
-                        const g = val || null;
-                        try {
-                          await updateDoc(
-                            doc(db, 'torneos', id, 'equipos', e.id),
-                            {
-                              ...(g ? { grupo: g } : { grupo: deleteField() }),
-                              updatedAt: serverTimestamp(),
-                            }
-                          );
-                        } catch (err) {
-                          console.error(err);
-                          alert('No se pudo actualizar el grupo.');
-                          ev.target.value = prev;
-                        }
-                      }}
-                    >
-                      <option value=''>(sin grupo)</option>
-                      {gruposActivos.map((g) => (
-                        <option key={g} value={g}>
-                          {g}
-                        </option>
-                      ))}
-                      <option value='__nuevo__'>+ Nuevo grupo…</option>
-                    </select>
-                  </div>
-
+                        }}
+                      >
+                        <option value=''>(sin grupo)</option>
+                        {gruposActivos.map((g) => (
+                          <option key={g} value={g}>
+                            {g}
+                          </option>
+                        ))}
+                        <option value='__nuevo__'>+ Nuevo grupo…</option>
+                      </select>
+                    </div>
+                  )}
                   {/* Footer: acciones ABAJO */}
                   {canManage && (
                     <div className='flex items-center justify-end gap-2 pt-1'>
@@ -1828,7 +1982,7 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200'
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={scoreLocal}
                     onChange={(e) => setScoreLocal(e.target.value)}
                     required
@@ -1842,10 +1996,54 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200'
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={scoreVisitante}
                     onChange={(e) => setScoreVisitante(e.target.value)}
                     required
+                  />
+                </div>
+              </div>
+
+              {/* Máximos anotadores (opcional) */}
+              <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                <div className='rounded-xl border p-3'>
+                  <div className='text-xs text-gray-600 mb-1'>
+                    Máximo {equiposMap[editingMatch.localId] || 'Local'}
+                  </div>
+                  <input
+                    className='w-full rounded-xl border px-3 py-2 mb-2'
+                    placeholder='Jugador (opcional)'
+                    value={topLocalName}
+                    onChange={(e) => setTopLocalName(e.target.value)}
+                  />
+                  <input
+                    type='number'
+                    min={0}
+                    inputMode='numeric'
+                    className='w-full rounded-xl border px-3 py-2'
+                    placeholder='Puntos'
+                    value={topLocalPts}
+                    onChange={(e) => setTopLocalPts(e.target.value)}
+                  />
+                </div>
+                <div className='rounded-xl border p-3'>
+                  <div className='text-xs text-gray-600 mb-1'>
+                    Máximo {equiposMap[editingMatch.visitanteId] || 'Visitante'}
+                  </div>
+                  <input
+                    className='w-full rounded-xl border px-3 py-2 mb-2'
+                    placeholder='Jugador (opcional)'
+                    value={topVisName}
+                    onChange={(e) => setTopVisName(e.target.value)}
+                  />
+                  <input
+                    type='number'
+                    min={0}
+                    inputMode='numeric'
+                    className='w-full rounded-xl border px-3 py-2'
+                    placeholder='Puntos'
+                    value={topVisPts}
+                    onChange={(e) => setTopVisPts(e.target.value)}
                   />
                 </div>
               </div>
@@ -1984,11 +2182,26 @@ export default function Torneo() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const nombre = teamForm.nombre.trim();
+                const nombre = (teamForm.nombre || '').trim();
                 if (!nombre) return alert('Poné un nombre de equipo.');
+
+                // usar el helper global nameKey para detectar duplicados
+                const key = nameKey(nombre);
+                const existe = equipos.some(
+                  (t) => nameKey(t.nombre || '') === key
+                );
+                if (existe) {
+                  alert(
+                    `"${nombre}" ya existe. Diferencialo (ej.: "${nombre} Azul").`
+                  );
+                  return;
+                }
+
                 addDoc(collection(db, 'torneos', id, 'equipos'), {
                   nombre,
-                  logoUrl: teamForm.logoUrl.trim() || '',
+                  logoUrl: (teamForm.logoUrl || '').trim(),
+                  // opcional: guardar la llave normalizada
+                  nombreKey: key,
                   createdAt: serverTimestamp(),
                 })
                   .then(() => setOpenTeam(false))
