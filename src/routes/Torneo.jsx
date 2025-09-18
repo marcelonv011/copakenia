@@ -763,6 +763,27 @@ export default function Torneo() {
     [partidos]
   );
 
+  // === NUEVO: resultados agrupados por grupo ===
+  const resultadosPorGrupo = useMemo(() => {
+    const map = {};
+    for (const p of resultados) {
+      const g = (p.grupo || '').toString().trim().toUpperCase() || 'SIN_GRUPO';
+      (map[g] ||= []).push(p);
+    }
+    // orden interno por fecha (más nuevos primero)
+    for (const g in map) {
+      map[g].sort((a, b) => (b.dia?.seconds ?? 0) - (a.dia?.seconds ?? 0));
+    }
+    // orden de grupos: A..Z y “SIN_GRUPO” al final
+    const orden = Object.keys(map).sort((a, b) => {
+      if (a === 'SIN_GRUPO' && b !== 'SIN_GRUPO') return 1;
+      if (b === 'SIN_GRUPO' && a !== 'SIN_GRUPO') return -1;
+      return a.localeCompare(b);
+    });
+
+    return orden.map((g) => ({ grupo: g, matches: map[g] }));
+  }, [resultados]);
+
   // Posiciones generales (solo si no hay múltiples grupos)
   const posicionesGenerales = useMemo(
     () => buildTable(resultados, equiposMap),
@@ -1734,36 +1755,54 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* RESULTADOS */}
+      {/* RESULTADOS (agrupados por grupo) */}
       {!loading && tab === 'resultados' && (
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+        <>
           {resultados.length === 0 ? (
-            <div className='col-span-full text-center bg-white border rounded-2xl p-8 shadow-sm'>
+            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
               <div className='text-4xl mb-2'>🏀</div>
               <p className='text-gray-600'>Todavía no hay resultados.</p>
             </div>
           ) : (
-            resultados.map((p) => (
-              <MatchRow
-                key={p.id}
-                localId={p.localId}
-                visitanteId={p.visitanteId}
-                scoreLocal={p.scoreLocal}
-                scoreVisitante={p.scoreVisitante}
-                equipos={equipos}
-                equiposMap={equiposMap}
-                ts={p.dia}
-                cancha={p.cancha}
-                canManage={canManage}
-                isResult
-                tops={p.tops}
-                onEditScore={() => openResultado(p)}
-                onDelete={() => solicitarBorrarPartido(p)}
-                onRevert={() => revertirResultado(p.id)}
-              />
-            ))
+            <div className='space-y-5'>
+              {resultadosPorGrupo.map(({ grupo, matches }) => (
+                <div key={grupo} className='space-y-2'>
+                  <div className='flex items-center gap-2'>
+                    <span className='inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-900 text-white'>
+                      {grupo === 'SIN_GRUPO' ? 'Sin grupo' : `Grupo ${grupo}`}
+                    </span>
+                    <span className='text-sm text-gray-500'>
+                      {matches.length} resultado
+                      {matches.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                    {matches.map((p) => (
+                      <MatchRow
+                        key={p.id}
+                        localId={p.localId}
+                        visitanteId={p.visitanteId}
+                        scoreLocal={p.scoreLocal}
+                        scoreVisitante={p.scoreVisitante}
+                        equipos={equipos}
+                        equiposMap={equiposMap}
+                        ts={p.dia}
+                        cancha={p.cancha}
+                        canManage={canManage}
+                        isResult
+                        tops={p.tops}
+                        onEditScore={() => openResultado(p)}
+                        onDelete={() => solicitarBorrarPartido(p)}
+                        onRevert={() => revertirResultado(p.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-        </div>
+        </>
       )}
 
       {/* POSICIONES */}
