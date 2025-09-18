@@ -827,6 +827,38 @@ export default function Torneo() {
     return out;
   }, [fasePartidos]);
 
+  // POSICIONES por COPA (usa buildTable)
+  const posicionesCopas = useMemo(() => {
+    const finales = {
+      'copa-oro': [],
+      'copa-plata': [],
+      'copa-bronce': [],
+    };
+    for (const p of fasePartidos) {
+      const f = String(p.fase || '');
+      if (!f.startsWith('copa-')) continue;
+      if (p.estado !== 'finalizado') continue;
+      if (!Number.isFinite(p.scoreLocal) || !Number.isFinite(p.scoreVisitante))
+        continue;
+      finales[f].push(p);
+    }
+    return {
+      'copa-oro': buildTable(finales['copa-oro'], equiposMap),
+      'copa-plata': buildTable(finales['copa-plata'], equiposMap),
+      'copa-bronce': buildTable(finales['copa-bronce'], equiposMap),
+    };
+  }, [fasePartidos, equiposMap]);
+
+  // ¿Hay copas en juego? (para mostrar el tab)
+  const hayCopasEnJuego = useMemo(() => {
+    return (
+      !!faseCopas ||
+      cupMatches['copa-oro']?.length ||
+      cupMatches['copa-plata']?.length ||
+      cupMatches['copa-bronce']?.length
+    );
+  }, [faseCopas, cupMatches]);
+
   /* ---------- Resultado ---------- */
   const openResultado = (match) => {
     if (!canManage) return;
@@ -1521,10 +1553,21 @@ export default function Torneo() {
     'fixture',
     'resultados',
     'posiciones',
+    ...(hayCopasEnJuego ? ['pos-copas'] : []), // << NUEVO
     'goleadores',
     'equipos',
     ...(admin || hayFaseFinal ? ['fase'] : []),
   ];
+
+  const irAPosCopas = () => {
+    setTab('pos-copas');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
+  };
+
+  const irAPosiciones = () => {
+    setTab('posiciones');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
+  };
 
   // Ranking de goleadores (a partir de tops por partido)
   const goleadores = useMemo(() => {
@@ -1630,6 +1673,7 @@ export default function Torneo() {
                   fixture: 'Fixture',
                   resultados: 'Resultados',
                   posiciones: 'Posiciones',
+                  'pos-copas': 'Posiciones copas', // << AGREGAR
                   goleadores: 'Máximos goleadores',
                   equipos: 'Equipos',
                   fase: 'Fase final',
@@ -1845,6 +1889,122 @@ export default function Torneo() {
         </>
       )}
 
+      {/* POSICIONES – COPAS (Oro / Plata / Bronce) */}
+      {!loading && tab === 'pos-copas' && (
+        <div className='space-y-4'>
+          <h3 className='font-semibold text-xl'>Posiciones por copa</h3>
+
+          {[
+            {
+              key: 'copa-oro',
+              title: 'Copa Oro',
+              ribbonFrom: 'from-amber-500',
+              ribbonTo: 'to-yellow-500',
+            },
+            {
+              key: 'copa-plata',
+              title: 'Copa Plata',
+              ribbonFrom: 'from-slate-500',
+              ribbonTo: 'to-gray-500',
+            },
+            {
+              key: 'copa-bronce',
+              title: 'Copa Bronce',
+              ribbonFrom: 'from-orange-500',
+              ribbonTo: 'to-amber-600',
+            },
+          ].map(({ key, title, ribbonFrom, ribbonTo }) => (
+            <div
+              key={key}
+              className='rounded-2xl border shadow-sm bg-white overflow-hidden'
+            >
+              {/* header con cintillo */}
+              <div
+                className={`px-4 py-3 border-b bg-gradient-to-r ${ribbonFrom} ${ribbonTo} text-white`}
+              >
+                <div className='flex items-center gap-2'>
+                  <span className='inline-flex items-center px-2 py-0.5 rounded-full bg-black/20 text-xs'>
+                    Tabla
+                  </span>
+                  <h4 className='font-semibold'>{title}</h4>
+                </div>
+              </div>
+
+              {posicionesCopas[key].length === 0 ? (
+                /* estado vacío */
+                <div className='px-6 py-10 text-center text-gray-500'>
+                  <div className='text-4xl mb-2'>📭</div>
+                  <div>Sin datos aún.</div>
+                </div>
+              ) : (
+                /* tabla */
+                <div className='overflow-x-auto'>
+                  <table className='min-w-full text-sm'>
+                    <thead className='bg-gray-50'>
+                      <tr className='text-gray-600'>
+                        <th className='text-left px-4 py-2 w-10'>#</th>
+                        <th className='text-left px-4 py-2'>Equipo</th>
+                        <th className='text-center px-2 py-2 w-14'>PJ</th>
+                        <th className='text-center px-2 py-2 w-14'>PG</th>
+                        <th className='text-center px-2 py-2 w-14'>PP</th>
+                        <th className='text-center px-2 py-2 w-16 hidden sm:table-cell'>
+                          PF
+                        </th>
+                        <th className='text-center px-2 py-2 w-16 hidden sm:table-cell'>
+                          PC
+                        </th>
+                        <th className='text-center px-2 py-2 w-16 hidden sm:table-cell'>
+                          DIF
+                        </th>
+                        <th className='text-center px-2 py-2 w-16'>PTS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {posicionesCopas[key].map((t, i) => {
+                        const team = equipos.find((e) => e.id === t.id);
+                        return (
+                          <tr
+                            key={`${key}-${t.id}`}
+                            className='border-t odd:bg-white even:bg-gray-50'
+                          >
+                            <td className='px-4 py-2'>{i + 1}</td>
+                            <td className='px-4 py-2'>
+                              <div className='flex items-center gap-2 min-w-0'>
+                                <Avatar
+                                  name={t.nombre}
+                                  logoUrl={team?.logoUrl}
+                                  size={20}
+                                />
+                                <span className='truncate'>{t.nombre}</span>
+                              </div>
+                            </td>
+                            <td className='px-2 py-2 text-center'>{t.pj}</td>
+                            <td className='px-2 py-2 text-center'>{t.pg}</td>
+                            <td className='px-2 py-2 text-center'>{t.pp}</td>
+                            <td className='px-2 py-2 text-center hidden sm:table-cell'>
+                              {t.pf}
+                            </td>
+                            <td className='px-2 py-2 text-center hidden sm:table-cell'>
+                              {t.pc}
+                            </td>
+                            <td className='px-2 py-2 text-center hidden sm:table-cell'>
+                              {t.dif}
+                            </td>
+                            <td className='px-2 py-2 text-center font-semibold'>
+                              {t.pts}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* GOLEADORES */}
       {!loading && tab === 'goleadores' && (
         <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
@@ -2009,10 +2169,53 @@ export default function Torneo() {
                 Definí cupos y equipos por copa. Generá el mini-fixture con
                 fecha/hora/cancha.
               </p>
+              <div className='mt-4 rounded-2xl border p-4 bg-white'>
+                <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3'>
+                  <div>
+                    <h4 className='font-semibold text-lg'>
+                      Posiciones por copa
+                    </h4>
+                    <p className='text-sm text-gray-600'>
+                      Mirá las tablas de Copa Oro, Plata y Bronce.
+                    </p>
+                  </div>
 
-              <div className='mt-3 grid grid-cols-1 md:grid-cols-3 gap-3'>
-                {/* Actual */}
-                <div className='rounded-xl border p-3'>
+                  <button
+                    onClick={irAPosCopas}
+                    className='inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white 
+                 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                  >
+                    Ver posiciones de copas
+                  </button>
+                </div>
+              </div>
+
+              {/* Posiciones por copa → botón que lleva a la pestaña Posiciones */}
+              <div className='mt-4 rounded-2xl border p-4 bg-white'>
+                <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3'>
+                  <div>
+                    <h4 className='font-semibold text-lg'>
+                      Posiciones por copa
+                    </h4>
+                    <p className='text-sm text-gray-600'>
+                      Consultá la tabla completa (general y por grupos) en la
+                      pestaña Posiciones.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={irAPosiciones}
+                    className='inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white 
+                 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                  >
+                    Ver tabla de posiciones
+                  </button>
+                </div>
+              </div>
+
+              {/* OTROS BLOQUES (debajo, sin compartir fila con posiciones) */}
+              <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
+                <div className='rounded-2xl border p-4'>
                   <div className='text-sm font-medium mb-2'>Actual</div>
                   {!faseCopas ? (
                     <div className='text-xs text-gray-500'>Sin asignar</div>
@@ -2040,8 +2243,7 @@ export default function Torneo() {
                   )}
                 </div>
 
-                {/* Sugerencia */}
-                <div className='rounded-xl border p-3'>
+                <div className='rounded-2xl border p-4'>
                   <div className='text-sm font-medium mb-2'>Sugerencia</div>
                   <div className='space-y-2 text-sm'>
                     <div>
@@ -2065,32 +2267,31 @@ export default function Torneo() {
                   </div>
                 </div>
 
-                {/* Acciones */}
-                <div className='rounded-xl border p-3'>
+                <div className='rounded-2xl border p-4'>
                   <div className='text-sm font-medium mb-2'>Acciones</div>
-                  {canManage ? (
-                    <div className='flex flex-col gap-2'>
-                      <button
-                        onClick={asignarCopasAuto}
-                        className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
-                      >
-                        Asignar recomendación
-                      </button>
-                      <button
-                        onClick={abrirCopasManual}
-                        className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
-                      >
-                        Elegir manualmente…
-                      </button>
-                      <button
-                        onClick={autoRellenarCopas}
-                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                      >
-                        Autorrellenar{' '}
-                        {gruposActivos.length >= 2
-                          ? 'por grupos'
-                          : 'por posiciones'}
-                      </button>
+                  <div className='flex flex-col gap-2'>
+                    <button
+                      onClick={asignarCopasAuto}
+                      className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
+                    >
+                      Asignar recomendación
+                    </button>
+                    <button
+                      onClick={abrirCopasManual}
+                      className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                    >
+                      Elegir manualmente…
+                    </button>
+                    <button
+                      onClick={autoRellenarCopas}
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Autorrellenar{' '}
+                      {gruposActivos.length >= 2
+                        ? 'por grupos'
+                        : 'por posiciones'}
+                    </button>
+                    <div className='flex flex-wrap gap-2 pt-1'>
                       <button
                         onClick={() =>
                           abrirModalFixtureCopa(
@@ -2098,9 +2299,9 @@ export default function Torneo() {
                             faseCopas?.oro || []
                           )
                         }
-                        className='mt-2 w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        Generar mini-fixture (Oro)
+                        Mini-fixture (Oro)
                       </button>
                       <button
                         onClick={() =>
@@ -2109,9 +2310,9 @@ export default function Torneo() {
                             faseCopas?.plata || []
                           )
                         }
-                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        Generar mini-fixture (Plata)
+                        Mini-fixture (Plata)
                       </button>
                       <button
                         onClick={() =>
@@ -2120,15 +2321,75 @@ export default function Torneo() {
                             faseCopas?.bronce || []
                           )
                         }
-                        className='w-full px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        Generar mini-fixture (Bronce)
+                        Mini-fixture (Bronce)
                       </button>
                     </div>
-                  ) : (
-                    <div className='text-xs text-gray-500'>Solo admin</div>
-                  )}
+                  </div>
                 </div>
+              </div>
+
+              {/* Acciones debajo (a todo el ancho en mobile) */}
+              <div className='mt-4 rounded-2xl border p-4'>
+                <div className='text-sm font-medium mb-2'>Acciones</div>
+                {canManage ? (
+                  <div className='flex flex-col sm:flex-row flex-wrap gap-2'>
+                    <button
+                      onClick={asignarCopasAuto}
+                      className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
+                    >
+                      Asignar recomendación
+                    </button>
+                    <button
+                      onClick={abrirCopasManual}
+                      className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                    >
+                      Elegir manualmente…
+                    </button>
+                    <button
+                      onClick={autoRellenarCopas}
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Autorrellenar{' '}
+                      {gruposActivos.length >= 2
+                        ? 'por grupos'
+                        : 'por posiciones'}
+                    </button>
+                    <button
+                      onClick={() =>
+                        abrirModalFixtureCopa('copa-oro', faseCopas?.oro || [])
+                      }
+                      className='mt-2 sm:mt-0 px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Mini-fixture (Oro)
+                    </button>
+                    <button
+                      onClick={() =>
+                        abrirModalFixtureCopa(
+                          'copa-plata',
+                          faseCopas?.plata || []
+                        )
+                      }
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Mini-fixture (Plata)
+                    </button>
+                    <button
+                      onClick={() =>
+                        abrirModalFixtureCopa(
+                          'copa-bronce',
+                          faseCopas?.bronce || []
+                        )
+                      }
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Mini-fixture (Bronce)
+                    </button>
+                  </div>
+                ) : (
+                  <div className='text-xs text-gray-500'>Solo admin</div>
+                )}
               </div>
 
               {(cupMatches['copa-oro'].length ||
@@ -3166,32 +3427,58 @@ export default function Torneo() {
                       Copa {copa}
                     </div>
 
-                    {/* Lista scrollable por columna (si la pantalla es chica) */}
+                    {/* Lista scrollable por columna (ordenada por grupo y nombre) */}
                     <div className='max-h-80 overflow-y-auto p-3 space-y-1'>
-                      {equipos.map((e) => {
-                        const checked = (copasSel[copa] || []).includes(e.id);
-                        const disabled =
-                          !checked &&
-                          (copasSel[copa]?.length || 0) >= (copaMax[copa] || 0);
-                        return (
-                          <label
-                            key={`${copa}-${e.id}`}
-                            className={`flex items-center gap-3 text-sm rounded-lg px-2 py-1.5 cursor-pointer hover:bg-gray-50 ${
-                              disabled ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                            title={disabled ? 'Cupo completo' : ''}
-                          >
-                            <input
-                              type='checkbox'
-                              className='accent-gray-800 w-4 h-4'
-                              checked={checked}
-                              disabled={disabled}
-                              onChange={() => toggleCopa(copa, e.id)}
-                            />
-                            <span className='truncate'>{e.nombre}</span>
-                          </label>
-                        );
-                      })}
+                      {equipos
+                        .slice()
+                        .sort((a, b) => {
+                          const ga = (a.grupo || '').toString().toUpperCase();
+                          const gb = (b.grupo || '').toString().toUpperCase();
+                          return (
+                            ga.localeCompare(gb) ||
+                            a.nombre.localeCompare(b.nombre)
+                          );
+                        })
+                        .map((e) => {
+                          const checked = (copasSel[copa] || []).includes(e.id);
+                          const disabled =
+                            !checked &&
+                            (copasSel[copa]?.length || 0) >=
+                              (copaMax[copa] || 0);
+                          const g = (e.grupo || '')
+                            .toString()
+                            .trim()
+                            .toUpperCase();
+                          return (
+                            <label
+                              key={`${copa}-${e.id}`}
+                              className={`flex items-center gap-3 text-sm rounded-lg px-2 py-1.5 cursor-pointer hover:bg-gray-50 ${
+                                disabled ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                              title={disabled ? 'Cupo completo' : ''}
+                            >
+                              <input
+                                type='checkbox'
+                                className='accent-gray-800 w-4 h-4'
+                                checked={checked}
+                                disabled={disabled}
+                                onChange={() => toggleCopa(copa, e.id)}
+                              />
+                              <span className='truncate'>{e.nombre}</span>
+
+                              {/* Chip de grupo al extremo derecho */}
+                              <span
+                                className={`ml-auto text-[10px] px-2 py-0.5 rounded-full ${
+                                  g
+                                    ? 'bg-gray-100 text-gray-700'
+                                    : 'bg-gray-50 text-gray-400'
+                                }`}
+                              >
+                                {g ? `Grupo ${g}` : 'Sin grupo'}
+                              </span>
+                            </label>
+                          );
+                        })}
                     </div>
 
                     <div className='px-4 py-2 text-xs text-gray-500 border-t'>
