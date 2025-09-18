@@ -1,5 +1,5 @@
 // src/routes/Torneo.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -82,6 +82,11 @@ const IconPlus = (p) => (
     <path fill='currentColor' d='M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2z' />
   </svg>
 );
+const IconUpload = (p) => (
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
+    <path fill='currentColor' d='M5 20h14v-2H5v2zm7-18l-5 5h3v6h4V7h3l-5-5z' />
+  </svg>
+);
 
 /* Avatar / EquipoTag */
 const initials = (name = '') =>
@@ -125,6 +130,89 @@ const nameKey = (s = '') =>
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+
+/* === Helpers de imagen & upload (Cloudinary unsigned) === */
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
+async function compressImageFileToDataURL(
+  file,
+  {
+    maxSize = 256, // lado máx px (sobra para logos)
+    mimeType = 'image/webp', // webp = liviano
+    quality = 0.85,
+  } = {}
+) {
+  const dataUrl = await readFileAsDataURL(file);
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = dataUrl;
+  });
+  const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  try {
+    const out = canvas.toDataURL(mimeType, quality);
+    if (!out || out.length < 20) throw new Error('webp falló');
+    return out;
+  } catch {
+    return canvas.toDataURL('image/png');
+  }
+}
+
+function dataURLtoBlob(dataURL) {
+  const [head, body] = dataURL.split(',');
+  const mime = head.match(/data:(.*?);base64/)?.[1] || 'image/png';
+  const binStr = atob(body);
+  const len = binStr.length;
+  const arr = new Uint8Array(len);
+  for (let i = 0; i < len; i++) arr[i] = binStr.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+async function uploadToCloudinary(fileOrDataURL, folder = 'logos') {
+  const cloudName = import.meta.env.VITE_CLD_CLOUD_NAME;
+  const preset = import.meta.env.VITE_CLD_UPLOAD_PRESET;
+  if (!cloudName || !preset) {
+    throw new Error('Cloudinary no está configurado (revisá .env)');
+  }
+
+  const form = new FormData();
+  if (typeof fileOrDataURL === 'string' && fileOrDataURL.startsWith('data:')) {
+    form.append('file', dataURLtoBlob(fileOrDataURL));
+  } else {
+    form.append('file', fileOrDataURL); // File nativo
+  }
+  form.append('upload_preset', preset);
+  if (folder) form.append('folder', folder);
+
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    {
+      method: 'POST',
+      body: form,
+    }
+  );
+  if (!res.ok) throw new Error('Upload falló');
+  const json = await res.json();
+  return json.secure_url; // <- URL pública
+}
 
 /* Fecha/hora */
 function fmtFecha(ts) {
@@ -358,6 +446,11 @@ export default function Torneo() {
     logoUrl: '',
     grupo: '',
   });
+  const newLogoInputRef = useRef(null);
+  const [teamLogoName, setTeamLogoName] = useState('');
+
+  const [teamUploadBusy, setTeamUploadBusy] = useState(false);
+  const [teamUploadError, setTeamUploadError] = useState('');
 
   // --- Editar equipo ---
   const [openEditTeam, setOpenEditTeam] = useState(false);
@@ -367,6 +460,11 @@ export default function Torneo() {
     logoUrl: '',
     grupo: '',
   });
+  const editLogoInputRef = useRef(null);
+  const [editLogoName, setEditLogoName] = useState('');
+
+  const [editUploadBusy, setEditUploadBusy] = useState(false);
+  const [editUploadError, setEditUploadError] = useState('');
 
   // Mensaje de error (inline en el modal de Editar equipo)
   const [editTeamError, setEditTeamError] = useState('');
@@ -2525,19 +2623,114 @@ export default function Torneo() {
                 />
               </div>
               <div>
-                <label className='text-sm'>Logo (URL opcional)</label>
-                <input
-                  className='mt-1 w-full rounded-xl border px-3 py-2'
-                  placeholder='https://…  o  /logos/tigres.png'
-                  value={teamForm.logoUrl}
-                  onChange={(e) =>
-                    setTeamForm((f) => ({ ...f, logoUrl: e.target.value }))
-                  }
-                />
-                <p className='text-xs text-gray-500 mt-1'>
-                  Tip: agregá imágenes en <code>/public/logos</code> y usá rutas
-                  como <code>/logos/tigres.png</code>.
-                </p>
+                <label className='text-sm'>Logo</label>
+
+                {/* Subir desde celular/PC */}
+                <div className='mt-1 flex items-center gap-3 flex-wrap'>
+                  {/* input real oculto */}
+                  <input
+                    ref={newLogoInputRef}
+                    type='file'
+                    accept='image/*'
+                    className='hidden'
+                    onChange={async (e) => {
+                      setTeamUploadError('');
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setTeamLogoName(file.name);
+                      try {
+                        setTeamUploadBusy(true);
+                        const dataURL = await compressImageFileToDataURL(file, {
+                          maxSize: 256,
+                        });
+                        const url = await uploadToCloudinary(dataURL, 'logos');
+                        setTeamForm((f) => ({ ...f, logoUrl: url }));
+                      } catch (err) {
+                        console.error(err);
+                        setTeamUploadError(
+                          'No se pudo subir el logo. Probá otra imagen.'
+                        );
+                      } finally {
+                        setTeamUploadBusy(false);
+                      }
+                    }}
+                  />
+
+                  {/* botón visible */}
+                  <button
+                    type='button'
+                    onClick={() => newLogoInputRef.current?.click()}
+                    className='inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                  >
+                    <IconUpload /> Seleccionar archivo
+                  </button>
+
+                  {/* nombre del archivo */}
+                  <span className='text-sm text-gray-600 truncate max-w-[60%]'>
+                    {teamLogoName || 'Ningún archivo seleccionado'}
+                  </span>
+
+                  {/* estado de subida */}
+                  {teamUploadBusy && (
+                    <span className='inline-flex items-center gap-2 text-sm text-gray-600'>
+                      <Spinner className='w-4 h-4' /> Subiendo…
+                    </span>
+                  )}
+                </div>
+
+                {/* Preview + limpiar */}
+                {teamForm.logoUrl && (
+                  <div className='mt-2 flex items-center gap-3'>
+                    <img
+                      src={teamForm.logoUrl}
+                      alt='logo'
+                      className='rounded-md object-cover border'
+                      style={{ width: 48, height: 48 }}
+                    />
+                    <button
+                      type='button'
+                      onClick={() =>
+                        setTeamForm((f) => ({ ...f, logoUrl: '' }))
+                      }
+                      className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs'
+                    >
+                      Quitar logo
+                    </button>
+                  </div>
+                )}
+
+                {/* Alternativa por URL (opcional) */}
+                <div className='mt-2'>
+                  <input
+                    className='w-full rounded-xl border px-3 py-2 text-sm'
+                    placeholder='o pegá una URL (opcional)'
+                    value={teamForm.logoUrl}
+                    onChange={(e) =>
+                      setTeamForm((f) => ({
+                        ...f,
+                        logoUrl: e.target.value.trim(),
+                      }))
+                    }
+                  />
+                </div>
+
+                {/* Estado */}
+                {teamUploadBusy && (
+                  <div className='text-xs text-gray-600 mt-1'>
+                    Subiendo logo…
+                  </div>
+                )}
+                {teamUploadError && (
+                  <div className='text-xs text-red-600 mt-1'>
+                    {teamUploadError}
+                  </div>
+                )}
+                {!teamForm.logoUrl && !teamUploadBusy && (
+                  <p className='text-xs text-gray-500 mt-1'>
+                    Tip: también podés pegar una URL si ya tenés el logo
+                    hosteado.
+                  </p>
+                )}
               </div>
 
               {/* NUEVO: Grupo */}
@@ -2630,18 +2823,108 @@ export default function Torneo() {
               </div>
 
               <div>
-                <label className='text-sm'>Logo (URL opcional)</label>
-                <input
-                  className='mt-1 w-full rounded-xl border px-3 py-2'
-                  value={editTeamForm.logoUrl}
-                  onChange={(e) =>
-                    setEditTeamForm((f) => ({ ...f, logoUrl: e.target.value }))
-                  }
-                  placeholder='https://…  o  /logos/tigres.png'
-                />
-                <p className='text-xs text-gray-500 mt-1'>
-                  Tip: podés usar rutas como <code>/logos/tigres.png</code>.
-                </p>
+                <label className='text-sm'>Logo</label>
+
+                {/* Subir desde celular/PC */}
+                <div className='mt-1 flex items-center gap-3 flex-wrap'>
+                  {/* input real oculto */}
+                  <input
+                    ref={editLogoInputRef}
+                    type='file'
+                    accept='image/*'
+                    className='hidden'
+                    onChange={async (e) => {
+                      setEditUploadError('');
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setEditLogoName(file.name);
+                      try {
+                        setEditUploadBusy(true);
+                        const dataURL = await compressImageFileToDataURL(file, {
+                          maxSize: 256,
+                        });
+                        const url = await uploadToCloudinary(dataURL, 'logos');
+                        setEditTeamForm((f) => ({ ...f, logoUrl: url }));
+                      } catch (err) {
+                        console.error(err);
+                        setEditUploadError(
+                          'No se pudo subir el logo. Probá otra imagen.'
+                        );
+                      } finally {
+                        setEditUploadBusy(false);
+                      }
+                    }}
+                  />
+
+                  {/* botón visible */}
+                  <button
+                    type='button'
+                    onClick={() => editLogoInputRef.current?.click()}
+                    className='inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                  >
+                    <IconUpload /> Seleccionar archivo
+                  </button>
+
+                  {/* nombre del archivo */}
+                  <span className='text-sm text-gray-600 truncate max-w-[60%]'>
+                    {editLogoName || 'Ningún archivo seleccionado'}
+                  </span>
+
+                  {/* estado de subida */}
+                  {editUploadBusy && (
+                    <span className='inline-flex items-center gap-2 text-sm text-gray-600'>
+                      <Spinner className='w-4 h-4' /> Subiendo…
+                    </span>
+                  )}
+                </div>
+
+                {/* Preview + limpiar */}
+                {editTeamForm.logoUrl && (
+                  <div className='mt-2 flex items-center gap-3'>
+                    <img
+                      src={editTeamForm.logoUrl}
+                      alt='logo'
+                      className='rounded-md object-cover border'
+                      style={{ width: 48, height: 48 }}
+                    />
+                    <button
+                      type='button'
+                      onClick={() =>
+                        setEditTeamForm((f) => ({ ...f, logoUrl: '' }))
+                      }
+                      className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs'
+                    >
+                      Quitar logo
+                    </button>
+                  </div>
+                )}
+
+                {/* Alternativa por URL (opcional) */}
+                <div className='mt-2'>
+                  <input
+                    className='w-full rounded-xl border px-3 py-2 text-sm'
+                    placeholder='o pegá una URL (opcional)'
+                    value={editTeamForm.logoUrl}
+                    onChange={(e) =>
+                      setEditTeamForm((f) => ({
+                        ...f,
+                        logoUrl: e.target.value.trim(),
+                      }))
+                    }
+                  />
+                </div>
+
+                {/* Estado */}
+                {editUploadBusy && (
+                  <div className='text-xs text-gray-600 mt-1'>
+                    Subiendo logo…
+                  </div>
+                )}
+                {editUploadError && (
+                  <div className='text-xs text-red-600 mt-1'>
+                    {editUploadError}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -2762,71 +3045,129 @@ export default function Torneo() {
         </div>
       )}
 
-      {/* Copas manual */}
+      {/* Copas manual (mejorado + scrollable) */}
       {openCopasManual && canManage && (
         <div
-          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4'
           onClick={() => setOpenCopasManual(false)}
         >
           <div
-            className='w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-5xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className='text-lg font-semibold mb-3'>
-              Asignar copas (manual)
-            </h3>
-            <form onSubmit={guardarCopasManual} className='space-y-4'>
+            {/* Header sticky */}
+            <div className='sticky top-0 z-10 bg-white/80 backdrop-blur border-b px-5 py-4'>
+              <div className='flex items-center justify-between'>
+                <h3 className='text-lg sm:text-xl font-semibold'>
+                  Asignar copas (manual)
+                </h3>
+                <button
+                  onClick={() => setOpenCopasManual(false)}
+                  className='px-3 py-1.5 rounded-xl border bg-white hover:bg-gray-50 text-sm'
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido scrollable */}
+            <form
+              onSubmit={guardarCopasManual}
+              className='overflow-y-auto px-5 py-4 space-y-4'
+            >
               {/* Cupos */}
-              <div className='rounded-xl border p-3'>
-                <div className='text-sm font-medium mb-2'>Cupos por copa</div>
-                <div className='flex flex-wrap gap-4 items-center'>
-                  {['oro', 'plata', 'bronce'].map((copa) => (
-                    <label
-                      key={`lim-${copa}`}
-                      className='flex items-center gap-2 text-sm'
+              <div className='rounded-2xl border p-4'>
+                <div className='text-sm font-medium mb-3'>Cupos por copa</div>
+                <div className='grid grid-cols-1 sm:grid-cols-4 gap-4 items-center'>
+                  <label className='flex items-center gap-2 text-sm'>
+                    <span className='w-14'>Oro</span>
+                    <input
+                      type='number'
+                      min={0}
+                      max={equipos.length}
+                      className='w-24 rounded-xl border px-3 py-2'
+                      value={copaMax.oro}
+                      onChange={(e) => {
+                        const n = Math.max(
+                          0,
+                          Math.min(
+                            equipos.length,
+                            parseInt(e.target.value || '0', 10)
+                          )
+                        );
+                        setCopaMax((m) => ({ ...m, oro: n }));
+                      }}
+                    />
+                  </label>
+                  <label className='flex items-center gap-2 text-sm'>
+                    <span className='w-14'>Plata</span>
+                    <input
+                      type='number'
+                      min={0}
+                      max={equipos.length}
+                      className='w-24 rounded-xl border px-3 py-2'
+                      value={copaMax.plata}
+                      onChange={(e) => {
+                        const n = Math.max(
+                          0,
+                          Math.min(
+                            equipos.length,
+                            parseInt(e.target.value || '0', 10)
+                          )
+                        );
+                        setCopaMax((m) => ({ ...m, plata: n }));
+                      }}
+                    />
+                  </label>
+                  <label className='flex items-center gap-2 text-sm'>
+                    <span className='w-14'>Bronce</span>
+                    <input
+                      type='number'
+                      min={0}
+                      max={equipos.length}
+                      className='w-24 rounded-xl border px-3 py-2'
+                      value={copaMax.bronce}
+                      onChange={(e) => {
+                        const n = Math.max(
+                          0,
+                          Math.min(
+                            equipos.length,
+                            parseInt(e.target.value || '0', 10)
+                          )
+                        );
+                        setCopaMax((m) => ({ ...m, bronce: n }));
+                      }}
+                    />
+                  </label>
+
+                  <div className='sm:ml-auto'>
+                    <button
+                      type='button'
+                      onClick={autoRellenarCopas}
+                      className='w-full sm:w-auto px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                     >
-                      <span className='capitalize w-16'>{copa}</span>
-                      <input
-                        type='number'
-                        min={0}
-                        max={equipos.length}
-                        className='w-24 rounded-xl border px-2 py-1'
-                        value={copaMax[copa]}
-                        onChange={(e) => {
-                          const n = Math.max(
-                            0,
-                            Math.min(
-                              equipos.length,
-                              parseInt(e.target.value, 10) || 0
-                            )
-                          );
-                          setCopaMax((m) => ({ ...m, [copa]: n }));
-                        }}
-                      />
-                    </label>
-                  ))}
-                  <button
-                    type='button'
-                    onClick={autoRellenarCopas}
-                    className='ml-auto px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                    title='Autorrellenar'
-                  >
-                    Autorrellenar{' '}
-                    {gruposActivos.length >= 2
-                      ? 'por grupos'
-                      : 'por posiciones'}
-                  </button>
+                      Autorrellenar{' '}
+                      {gruposActivos.length >= 2
+                        ? 'por grupos'
+                        : 'por posiciones'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
               {/* Selección */}
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                 {['oro', 'plata', 'bronce'].map((copa) => (
-                  <div key={copa} className='rounded-xl border p-3'>
-                    <div className='text-sm font-medium mb-2 capitalize'>
+                  <div
+                    key={copa}
+                    className='rounded-2xl border p-0 overflow-hidden bg-white'
+                  >
+                    <div className='px-4 py-3 font-medium border-b capitalize'>
                       Copa {copa}
                     </div>
-                    <div className='space-y-1 max-h-72 overflow-auto pr-1'>
+
+                    {/* Lista scrollable por columna (si la pantalla es chica) */}
+                    <div className='max-h-80 overflow-y-auto p-3 space-y-1'>
                       {equipos.map((e) => {
                         const checked = (copasSel[copa] || []).includes(e.id);
                         const disabled =
@@ -2835,12 +3176,14 @@ export default function Torneo() {
                         return (
                           <label
                             key={`${copa}-${e.id}`}
-                            className={`flex items-center gap-2 text-sm ${
-                              disabled ? 'opacity-60' : ''
+                            className={`flex items-center gap-3 text-sm rounded-lg px-2 py-1.5 cursor-pointer hover:bg-gray-50 ${
+                              disabled ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
+                            title={disabled ? 'Cupo completo' : ''}
                           >
                             <input
                               type='checkbox'
+                              className='accent-gray-800 w-4 h-4'
                               checked={checked}
                               disabled={disabled}
                               onChange={() => toggleCopa(copa, e.id)}
@@ -2850,30 +3193,33 @@ export default function Torneo() {
                         );
                       })}
                     </div>
-                    <div className='text-xs text-gray-500 mt-2'>
+
+                    <div className='px-4 py-2 text-xs text-gray-500 border-t'>
                       {copasSel[copa]?.length || 0}/{copaMax[copa]}{' '}
                       seleccionados
                     </div>
                   </div>
                 ))}
               </div>
-
-              <div className='flex items-center justify-end gap-2'>
-                <button
-                  type='button'
-                  onClick={() => setOpenCopasManual(false)}
-                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
-                >
-                  Cancelar
-                </button>
-                <button
-                  type='submit'
-                  className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
-                >
-                  Guardar
-                </button>
-              </div>
             </form>
+
+            {/* Footer sticky */}
+            <div className='sticky bottom-0 z-10 bg-white/80 backdrop-blur border-t px-5 py-3 flex items-center justify-end gap-2'>
+              <button
+                type='button'
+                onClick={() => setOpenCopasManual(false)}
+                className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+              >
+                Cancelar
+              </button>
+              <button
+                formAction='submit'
+                onClick={guardarCopasManual}
+                className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
+              >
+                Guardar
+              </button>
+            </div>
           </div>
         </div>
       )}
