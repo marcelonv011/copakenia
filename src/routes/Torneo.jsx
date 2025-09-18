@@ -192,6 +192,24 @@ function buildTable(partidosFinalizados, equiposMap) {
   );
 }
 
+/* ---------- Playoffs helpers (NUEVO) ---------- */
+const PO_FASES = ['octavos', 'cuartos', 'semi', 'final'];
+const nextFase = (f) =>
+  f === 'octavos'
+    ? 'cuartos'
+    : f === 'cuartos'
+    ? 'semi'
+    : f === 'semi'
+    ? 'final'
+    : null;
+const isPO = (f) => PO_FASES.includes(String(f || ''));
+
+/** Devuelve id del ganador (no se permiten empates) */
+const ganadorDe = (match, sl, sv) => {
+  if (!isPO(match?.fase)) return null;
+  return sl > sv ? match.localId : match.visitanteId;
+};
+
 /* Tarjeta partido (lista) */
 function MatchRow({
   localId,
@@ -335,7 +353,100 @@ export default function Torneo() {
     cancha: '',
   });
   const [openTeam, setOpenTeam] = useState(false);
-  const [teamForm, setTeamForm] = useState({ nombre: '', logoUrl: '' });
+  const [teamForm, setTeamForm] = useState({
+    nombre: '',
+    logoUrl: '',
+    grupo: '',
+  });
+
+  // --- Editar equipo ---
+  const [openEditTeam, setOpenEditTeam] = useState(false);
+  const [editingTeam, setEditingTeam] = useState(null); // objeto equipo
+  const [editTeamForm, setEditTeamForm] = useState({
+    nombre: '',
+    logoUrl: '',
+    grupo: '',
+  });
+
+  // Mensaje de error (inline en el modal de Editar equipo)
+  const [editTeamError, setEditTeamError] = useState('');
+
+  function abrirEditarEquipo(equipo) {
+    setEditingTeam(equipo);
+    setEditTeamForm({
+      nombre: equipo?.nombre || '',
+      logoUrl: equipo?.logoUrl || '',
+      grupo: (equipo?.grupo || '').toString().toUpperCase(),
+    });
+    setOpenEditTeam(true);
+  }
+
+  async function guardarEdicionEquipo(e) {
+    e.preventDefault();
+    if (!canManage || !editingTeam) return;
+
+    // limpiar error previo
+    setEditTeamError('');
+
+    const nombre = (editTeamForm.nombre || '').trim();
+    if (!nombre) {
+      setEditTeamError('Poné un nombre de equipo.');
+      return;
+    }
+    const key = nameKey(nombre);
+    const existe = equipos.some(
+      (t) => t.id !== editingTeam.id && nameKey(t.nombre || '') === key
+    );
+    if (existe) {
+      setEditTeamError(
+        `"${nombre}" ya existe. Cambiá el nombre (ej.: "${nombre} Azul").`
+      );
+      return;
+    }
+
+    // --- 🔒 Regla: si ya jugó en su grupo actual, no puede cambiar de grupo ---
+    const oldGroup = (editingTeam?.grupo || '').toString().trim().toUpperCase();
+    const newGroup = (editTeamForm.grupo || '').toString().trim().toUpperCase();
+
+    if (oldGroup && newGroup !== oldGroup) {
+      const jugoEnSuGrupo = partidos.some((p) => {
+        const g = (p.grupo || '').toString().toUpperCase();
+        const esDelMismoGrupo = g && g === oldGroup;
+        const esEsteEquipo =
+          p.localId === editingTeam.id || p.visitanteId === editingTeam.id;
+        const esFaseRegular = !p.fase;
+        return esFaseRegular && esDelMismoGrupo && esEsteEquipo;
+      });
+
+      if (jugoEnSuGrupo) {
+        setEditTeamError(
+          `Este equipo ya disputó un partido contra otro equipo del grupo ${oldGroup}.`
+        );
+        return; // bloqueamos el cambio de grupo
+      }
+    }
+    // --- fin regla ---
+
+    const payload = {
+      nombre,
+      nombreKey: key,
+      logoUrl: (editTeamForm.logoUrl || '').trim(),
+    };
+    if (newGroup) payload.grupo = newGroup;
+    else payload.grupo = deleteField(); // quitar grupo si queda vacío
+
+    try {
+      await updateDoc(
+        doc(db, 'torneos', id, 'equipos', editingTeam.id),
+        payload
+      );
+      setOpenEditTeam(false);
+      setEditingTeam(null);
+    } catch (err) {
+      console.error(err);
+      setEditTeamError('No se pudo guardar la edición del equipo.');
+    }
+  }
 
   /* Confirmar borrar partido (modal) */
   const [openDeleteMatch, setOpenDeleteMatch] = useState(false);
@@ -359,6 +470,101 @@ export default function Torneo() {
   const [openPOConfig, setOpenPOConfig] = useState(false);
   const [poN, setPoN] = useState(4); // 2|4|8|16
   const [poSeleccion, setPoSeleccion] = useState([]);
+  const [poPairs, setPoPairs] = useState([]); // [{localId, visitanteId, fecha, cancha, slot}]
+
+  // Modal de programación del siguiente cruce de Playoffs
+  const [openPOProgram, setOpenPOProgram] = useState(false);
+  const [poProgramForm, setPoProgramForm] = useState({
+    matchId: null, // si ya existe el partido de la siguiente fase
+    fase: '', // 'cuartos' | 'semi' | 'final'
+    faseLabel: '', // etiqueta linda para el modal
+    poSlot: null, // slot del partido siguiente
+    localId: '',
+    visitanteId: '',
+    fecha: '', // datetime-local (yyyy-MM-ddTHH:mm)
+    cancha: '',
+  });
+
+  // Abrir modal con datos precargados (si ya existe, trae fecha/cancha)
+  function abrirProgramarSiguiente({
+    matchId = null,
+    fase,
+    poSlot,
+    localId,
+    visitanteId,
+    fechaExistente,
+    canchaExistente,
+  }) {
+    const porDefecto = new Date(Date.now() + 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 16);
+    const faseLabel =
+      { cuartos: 'Cuartos de final', semi: 'Semifinal', final: 'Final' }[
+        fase
+      ] || fase;
+
+    setPoProgramForm({
+      matchId,
+      fase,
+      faseLabel,
+      poSlot,
+      localId,
+      visitanteId,
+      fecha: fechaExistente
+        ? new Date(fechaExistente.seconds * 1000).toISOString().slice(0, 16)
+        : porDefecto,
+      cancha: canchaExistente || '',
+    });
+    setOpenPOProgram(true);
+  }
+
+  async function guardarProgramacionSiguiente(e) {
+    e.preventDefault();
+    if (!canManage) return;
+
+    const { matchId, fase, poSlot, localId, visitanteId, fecha, cancha } =
+      poProgramForm;
+    const dia = fecha ? new Date(fecha) : new Date(Date.now() + 60 * 60 * 1000);
+
+    try {
+      if (matchId) {
+        // Actualizar partido existente (pudo haberse creado como placeholder)
+        await updateDoc(doc(db, 'torneos', id, 'partidos', matchId), {
+          localId,
+          visitanteId,
+          dia,
+          cancha: cancha.trim(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        // Crear partido nuevo de la siguiente fase
+        await addDoc(collection(db, 'torneos', id, 'partidos'), {
+          localId,
+          visitanteId,
+          estado: 'pendiente',
+          fase,
+          poSlot,
+          dia,
+          cancha: cancha.trim(),
+          createdAt: serverTimestamp(),
+        });
+      }
+      setOpenPOProgram(false);
+      setPoProgramForm({
+        matchId: null,
+        fase: '',
+        faseLabel: '',
+        poSlot: null,
+        localId: '',
+        visitanteId: '',
+        fecha: '',
+        cancha: '',
+      });
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo programar el partido.'); // si querés, lo cambiamos por banner inline también
+    }
+  }
 
   /* GRUPOS – modal programar fixtures por grupo */
   const [openGrupoModal, setOpenGrupoModal] = useState(false);
@@ -559,6 +765,80 @@ export default function Torneo() {
     setTopVisPts('');
     setSaving(false);
   };
+
+  /** (NUEVO) Avanza automáticamente el cuadro de playoffs cuando corresponde */
+  async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
+    if (!canManage) return;
+    if (!isPO(match?.fase)) return;
+    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) return;
+
+    const ganador = ganadorDe(match, sl, sv);
+    if (!ganador) return;
+
+    const faseActual = match.fase;
+    const siguiente = nextFase(faseActual);
+    if (!siguiente) return; // ya era final
+
+    // Emparejamiento por slots: (0,1)->0 ; (2,3)->1 ; (4,5)->2 ; (6,7)->3 ; etc.
+    const slot = Number.isFinite(match?.poSlot) ? match.poSlot : null;
+    if (!Number.isFinite(slot)) return;
+
+    const parSlot = slot ^ 1; // 0<->1, 2<->3, etc.
+    const vecinos = fasePartidos.filter(
+      (m) => m.fase === faseActual && Number.isFinite(m.poSlot)
+    );
+    const hermano = vecinos.find((m) => m.poSlot === parSlot);
+
+    // Necesitamos que el "hermano" esté finalizado
+    const hermanoFinal =
+      hermano &&
+      hermano.estado === 'finalizado' &&
+      Number.isFinite(hermano.scoreLocal) &&
+      Number.isFinite(hermano.scoreVisitante);
+    if (!hermanoFinal) return;
+
+    const ganadorHermano = ganadorDe(
+      hermano,
+      hermano.scoreLocal,
+      hermano.scoreVisitante
+    );
+    if (!ganadorHermano) return;
+
+    const nextSlot = Math.floor(Math.min(slot, parSlot) / 2);
+    // Por convención: el ganador del slot PAR queda como local
+    const localId = (slot % 2 === 0 ? ganador : ganadorHermano) || ganador;
+    const visitanteId =
+      (slot % 2 === 0 ? ganadorHermano : ganador) || ganadorHermano;
+
+    // ¿Ya existe ese partido de la fase siguiente?
+    const ya = fasePartidos.find(
+      (m) => m.fase === siguiente && m.poSlot === nextSlot
+    );
+    if (ya) {
+      // Abrimos modal para ajustar fecha/cancha y, si hace falta, participantes
+      abrirProgramarSiguiente({
+        matchId: ya.id,
+        fase: siguiente,
+        poSlot: nextSlot,
+        localId,
+        visitanteId,
+        fechaExistente: ya.dia,
+        canchaExistente: ya.cancha,
+      });
+      return;
+    }
+
+    // Abrir modal lindo para programar el partido siguiente (sin prompts del navegador)
+    abrirProgramarSiguiente({
+      matchId: null,
+      fase: siguiente,
+      poSlot: nextSlot,
+      localId,
+      visitanteId,
+      // sin fecha/cancha existentes: van por defecto
+    });
+  }
+
   const saveResultado = async (e) => {
     e.preventDefault();
     if (!canManage || !editingMatch) return;
@@ -597,6 +877,10 @@ export default function Torneo() {
         ...(tops ? { tops } : {}),
         updatedAt: serverTimestamp(),
       });
+
+      // Avanzar cuadro si corresponde
+      await avanzarPlayoffsSiCorresponde(editingMatch, sl, sv);
+
       closeResultado();
     } catch (err) {
       console.error(err);
@@ -604,6 +888,7 @@ export default function Torneo() {
       alert('No se pudo guardar el resultado.');
     }
   };
+
   const revertirResultado = async (matchId) => {
     if (!canManage) return;
     if (!confirm('¿Revertir este resultado a pendiente?')) return;
@@ -631,7 +916,6 @@ export default function Torneo() {
     if (!fecha) return alert('Elegí fecha y hora.');
     if (!cancha || !cancha.trim()) return alert('Ingresá la cancha.');
     try {
-      // si ambos tienen grupo y coincide, guardo grupo para el match
       const gLocal = (
         equipos.find((x) => x.id === localId)?.grupo || ''
       ).toUpperCase();
@@ -691,7 +975,6 @@ export default function Torneo() {
     }
   };
 
-  // Helpers usados por cambiarModo (declaración con hoisting)
   async function eliminarPlayoffs() {
     const po = fasePartidos.filter(
       (m) => !String(m.fase || '').startsWith('copa-')
@@ -700,8 +983,6 @@ export default function Torneo() {
       po.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
   }
-
-  // ✅ Renombrado para evitar colisión con la otra declaración
   async function eliminarCopasFase() {
     const cups = fasePartidos.filter((m) =>
       String(m.fase || '').startsWith('copa-')
@@ -731,7 +1012,6 @@ export default function Torneo() {
           )
         )
           return;
-
         await eliminarPlayoffs();
       } else if (nuevo === 'playoffs') {
         const hayCopas =
@@ -744,7 +1024,6 @@ export default function Torneo() {
           )
         )
           return;
-
         await eliminarCopasFase();
       }
 
@@ -762,7 +1041,6 @@ export default function Torneo() {
 
   /* ---------- Copas ---------- */
   const recomendacionCopas = useMemo(() => {
-    // si no hay grupos, usar tabla general
     if (gruposActivos.length < 2) {
       const ids = posicionesGenerales.map((t) => t.id);
       return {
@@ -771,7 +1049,6 @@ export default function Torneo() {
         bronce: ids.slice(2, 4),
       };
     }
-    // con grupos: top1/top2/top3 de cada grupo
     const oro = [],
       plata = [],
       bronce = [];
@@ -833,7 +1110,6 @@ export default function Torneo() {
     setOpenCopasManual(true);
   };
 
-  // Autorrellenar desde posiciones generales (si no hay grupos)
   const autoRellenarCopas = () => {
     if (gruposActivos.length >= 2) return autoRellenarCopasDesdeGrupos();
     const top = posicionesGenerales.map((t) => t.id);
@@ -845,8 +1121,6 @@ export default function Torneo() {
     );
     setCopasSel({ oro, plata, bronce });
   };
-
-  // Autorrellenar desde grupos
   const autoRellenarCopasDesdeGrupos = () => {
     const oro = [],
       plata = [],
@@ -912,7 +1186,6 @@ export default function Torneo() {
     }
   };
 
-  // Mini-fixture de copa (con programación)
   const abrirModalFixtureCopa = (claveCopa, ids) => {
     if (!canManage) return;
     if (modoFase !== 'copas')
@@ -991,6 +1264,21 @@ export default function Torneo() {
       ? 'octavos'
       : 'otros';
 
+  // NUEVO: recomputar cruces iniciales con programación
+  const recomputePoPairs = (selIds, n) => {
+    const rankIndex = new Map(posicionesGenerales.map((t, i) => [t.id, i]));
+    const ordered = selIds
+      .slice()
+      .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
+    const pairs = [];
+    for (let i = 0; i < Math.floor(n / 2); i++) {
+      const localId = ordered[i];
+      const visitanteId = ordered[ordered.length - 1 - i];
+      pairs.push({ localId, visitanteId, fecha: '', cancha: '', slot: i });
+    }
+    setPoPairs(pairs);
+  };
+
   const abrirPOConfig = () => {
     if (!canManage) return;
     if (modoFase !== 'playoffs')
@@ -999,8 +1287,10 @@ export default function Torneo() {
       );
     const maxN = Math.min(posicionesGenerales.length, 16);
     const defaultN = [16, 8, 4, 2].find((k) => k <= maxN) || 2;
+    const selected = posicionesGenerales.slice(0, defaultN).map((t) => t.id);
     setPoN(defaultN);
-    setPoSeleccion(posicionesGenerales.slice(0, defaultN).map((t) => t.id));
+    setPoSeleccion(selected);
+    recomputePoPairs(selected, defaultN); // precarga cruces
     setOpenPOConfig(true);
   };
 
@@ -1013,11 +1303,15 @@ export default function Torneo() {
       );
     if (poSeleccion.length !== poN)
       return alert(`Elegí exactamente ${poN} equipos.`);
+    if (poPairs.length !== poN / 2) return alert('Faltan cruces.');
 
-    const rankIndex = new Map(posicionesGenerales.map((t, i) => [t.id, i]));
-    const ordered = poSeleccion
-      .slice()
-      .sort((a, b) => (rankIndex.get(a) ?? 999) - (rankIndex.get(b) ?? 999));
+    for (const p of poPairs) {
+      if (!p.fecha)
+        return alert('Completá fecha y hora en todos los partidos.');
+      if (!p.cancha?.trim())
+        return alert('Completá la cancha en todos los partidos.');
+    }
+
     const fase = seedName(poN);
     try {
       const existentes = fasePartidos.filter((m) => m.fase === fase);
@@ -1026,17 +1320,15 @@ export default function Torneo() {
           deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
-      const baseHora = Date.now() + 60 * 60 * 1000;
-      for (let i = 0; i < ordered.length / 2; i++) {
-        const L = ordered[i],
-          V = ordered[ordered.length - 1 - i];
+      for (const p of poPairs) {
         await addDoc(collection(db, 'torneos', id, 'partidos'), {
-          localId: L,
-          visitanteId: V,
+          localId: p.localId,
+          visitanteId: p.visitanteId,
           estado: 'pendiente',
           fase,
-          dia: new Date(baseHora + i * 3600000),
-          cancha: '',
+          poSlot: p.slot,
+          dia: new Date(p.fecha),
+          cancha: p.cancha.trim(),
           createdAt: serverTimestamp(),
         });
       }
@@ -1131,7 +1423,7 @@ export default function Torneo() {
     'fixture',
     'resultados',
     'posiciones',
-    'goleadores', // nueva pestaña
+    'goleadores',
     'equipos',
     ...(admin || hayFaseFinal ? ['fase'] : []),
   ];
@@ -1167,7 +1459,7 @@ export default function Torneo() {
 
   return (
     <div className='space-y-5'>
-      {/* Header (glass, usa fondo global del body) */}
+      {/* Header */}
       <div className='rounded-2xl p-[1px] bg-gradient-to-r from-blue-200/60 via-purple-200/60 to-pink-200/60'>
         <div className='rounded-2xl bg-white/70 backdrop-blur-md p-4 sm:p-5 border border-white/40'>
           <div className='flex items-center justify-between gap-3'>
@@ -1544,93 +1836,17 @@ export default function Torneo() {
                     )}
                   </div>
 
-                  {/* Selector de grupo (SOLO admin) */}
-                  {canManage && (
-                    <div>
-                      <label className='text-xs text-gray-500'>
-                        Cambiar grupo
-                      </label>
-                      <select
-                        className='mt-1 w-full rounded-xl border px-3 py-2 text-sm'
-                        value={(e.grupo || '').toUpperCase()}
-                        onChange={async (ev) => {
-                          const prev = (e.grupo || '').toUpperCase();
-                          const val = ev.target.value;
-
-                          if (val === '__nuevo__') {
-                            const letras = gruposActivos.filter((g) =>
-                              /^[A-Z]$/.test(g)
-                            );
-                            let sugerida = 'A';
-                            for (let i = 0; i < 26; i++) {
-                              const L = String.fromCharCode(65 + i);
-                              if (!letras.includes(L)) {
-                                sugerida = L;
-                                break;
-                              }
-                            }
-                            const ingresado = prompt(
-                              'Código de grupo (ej. E, F, G, G1, Zona Norte):',
-                              sugerida
-                            );
-                            const g = (ingresado || '')
-                              .trim()
-                              .toUpperCase()
-                              .slice(0, 12);
-                            if (!g) {
-                              ev.target.value = prev;
-                              return;
-                            }
-
-                            try {
-                              await updateDoc(
-                                doc(db, 'torneos', id, 'equipos', e.id),
-                                {
-                                  grupo: g,
-                                  updatedAt: serverTimestamp(),
-                                }
-                              );
-                            } catch (err) {
-                              console.error(err);
-                              alert('No se pudo actualizar el grupo.');
-                              ev.target.value = prev;
-                            }
-                            return;
-                          }
-
-                          // guardar grupo existente (o limpiar)
-                          const g = val || null;
-                          try {
-                            await updateDoc(
-                              doc(db, 'torneos', id, 'equipos', e.id),
-                              {
-                                ...(g
-                                  ? { grupo: g }
-                                  : { grupo: deleteField() }),
-                                updatedAt: serverTimestamp(),
-                              }
-                            );
-                          } catch (err) {
-                            console.error(err);
-                            alert('No se pudo actualizar el grupo.');
-                            ev.target.value = prev;
-                          }
-                        }}
-                      >
-                        <option value=''>(sin grupo)</option>
-                        {gruposActivos.map((g) => (
-                          <option key={g} value={g}>
-                            {g}
-                          </option>
-                        ))}
-                        <option value='__nuevo__'>+ Nuevo grupo…</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Footer */}
+                  {/* Footer: editar / borrar */}
                   {canManage && (
                     <div className='flex items-center justify-end gap-2 pt-1'>
+                      <button
+                        onClick={() => abrirEditarEquipo(e)}
+                        className='w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                        title='Editar equipo'
+                      >
+                        <IconEdit />
+                        <span className='sm:hidden'>Editar</span>
+                      </button>
                       <button
                         onClick={() => borrarEquipo(e.id)}
                         className='w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
@@ -1985,7 +2201,7 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200'
+                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-2 00'
                     value={scoreLocal}
                     onChange={(e) => setScoreLocal(e.target.value)}
                     required
@@ -2011,7 +2227,8 @@ export default function Torneo() {
               <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div className='rounded-xl border p-3'>
                   <div className='text-xs text-gray-600 mb-1'>
-                    Máximo anotador del equipo: {equiposMap[editingMatch.localId] || 'Local'}
+                    Máximo anotador del equipo:{' '}
+                    {equiposMap[editingMatch.localId] || 'Local'}
                   </div>
                   <input
                     className='w-full rounded-xl border px-3 py-2 mb-2'
@@ -2031,7 +2248,8 @@ export default function Torneo() {
                 </div>
                 <div className='rounded-xl border p-3'>
                   <div className='text-xs text-gray-600 mb-1'>
-                    Máximo anotador del equipo: {equiposMap[editingMatch.visitanteId] || 'Visitante'}
+                    Máximo anotador del equipo:{' '}
+                    {equiposMap[editingMatch.visitanteId] || 'Visitante'}
                   </div>
                   <input
                     className='w-full rounded-xl border px-3 py-2 mb-2'
@@ -2065,6 +2283,87 @@ export default function Torneo() {
                   className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60'
                 >
                   {saving && <Spinner />} Guardar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Programar siguiente cruce (Playoffs) */}
+      {openPOProgram && canManage && (
+        <div
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+          onClick={() => setOpenPOProgram(false)}
+        >
+          <div
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className='text-lg font-semibold mb-1'>
+              Programar {poProgramForm.faseLabel}
+            </h3>
+            <div className='text-sm text-gray-600 mb-3'>
+              <EquipoTag
+                nombre={equiposMap[poProgramForm.localId] || 'Local'}
+                logoUrl={
+                  equipos.find((e) => e.id === poProgramForm.localId)?.logoUrl
+                }
+              />{' '}
+              vs{' '}
+              <EquipoTag
+                nombre={equiposMap[poProgramForm.visitanteId] || 'Visitante'}
+                logoUrl={
+                  equipos.find((e) => e.id === poProgramForm.visitanteId)
+                    ?.logoUrl
+                }
+              />
+            </div>
+
+            <form onSubmit={guardarProgramacionSiguiente} className='space-y-3'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                <div>
+                  <label className='text-sm'>Fecha & hora</label>
+                  <input
+                    type='datetime-local'
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    value={poProgramForm.fecha}
+                    onChange={(e) =>
+                      setPoProgramForm((f) => ({ ...f, fecha: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className='text-sm'>Cancha</label>
+                  <input
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. Club A'
+                    value={poProgramForm.cancha}
+                    onChange={(e) =>
+                      setPoProgramForm((f) => ({
+                        ...f,
+                        cancha: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className='flex items-center justify-end gap-2 pt-2'>
+                <button
+                  type='button'
+                  onClick={() => setOpenPOProgram(false)}
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+                >
+                  Cancelar
+                </button>
+                <button
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
+                >
+                  Guardar
                 </button>
               </div>
             </form>
@@ -2187,8 +2486,6 @@ export default function Torneo() {
                 e.preventDefault();
                 const nombre = (teamForm.nombre || '').trim();
                 if (!nombre) return alert('Poné un nombre de equipo.');
-
-                // Bloquear duplicados por nombre (ignora mayúsculas/acentos/espacios)
                 const key = nameKey(nombre);
                 const existe = equipos.some(
                   (t) => nameKey(t.nombre || '') === key
@@ -2199,11 +2496,12 @@ export default function Torneo() {
                   );
                   return;
                 }
-
                 addDoc(collection(db, 'torneos', id, 'equipos'), {
                   nombre,
                   logoUrl: (teamForm.logoUrl || '').trim(),
-                  nombreKey: key, // opcional
+                  nombreKey: key,
+                  grupo:
+                    (teamForm.grupo || '').trim().toUpperCase() || undefined,
                   createdAt: serverTimestamp(),
                 })
                   .then(() => setOpenTeam(false))
@@ -2241,6 +2539,47 @@ export default function Torneo() {
                   como <code>/logos/tigres.png</code>.
                 </p>
               </div>
+
+              {/* NUEVO: Grupo */}
+              <div>
+                <label className='text-sm'>Grupo (opcional)</label>
+                <div className='flex flex-col gap-2'>
+                  <input
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. A, B, C…'
+                    value={teamForm.grupo}
+                    onChange={(e) =>
+                      setTeamForm((f) => ({
+                        ...f,
+                        grupo: e.target.value.toUpperCase().slice(0, 3),
+                      }))
+                    }
+                  />
+                  {/* Atajos de grupos existentes */}
+                  {gruposActivos.length > 0 && (
+                    <div className='flex gap-2 flex-wrap'>
+                      {gruposActivos.map((g) => (
+                        <button
+                          key={g}
+                          type='button'
+                          onClick={() =>
+                            setTeamForm((f) => ({ ...f, grupo: g }))
+                          }
+                          className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm'
+                          title={`Usar grupo ${g}`}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className='text-xs text-gray-500 mt-1'>
+                  Usá una letra (A, B, C) o un nombre corto. Se muestra como
+                  “Grupo A”.
+                </p>
+              </div>
+
               <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
                   type='button'
@@ -2254,6 +2593,117 @@ export default function Torneo() {
                   className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
                 >
                   Crear
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Editar equipo */}
+      {openEditTeam && editingTeam && canManage && (
+        <div
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+          onClick={() => setOpenEditTeam(false)}
+        >
+          <div
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className='text-lg font-semibold mb-3'>Editar equipo</h3>
+            {editTeamError && (
+              <div className='mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 p-3 text-sm'>
+                {editTeamError}
+              </div>
+            )}
+
+            <form onSubmit={guardarEdicionEquipo} className='space-y-3'>
+              <div>
+                <label className='text-sm'>Nombre</label>
+                <input
+                  className='mt-1 w-full rounded-xl border px-3 py-2'
+                  value={editTeamForm.nombre}
+                  onChange={(e) =>
+                    setEditTeamForm((f) => ({ ...f, nombre: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div>
+                <label className='text-sm'>Logo (URL opcional)</label>
+                <input
+                  className='mt-1 w-full rounded-xl border px-3 py-2'
+                  value={editTeamForm.logoUrl}
+                  onChange={(e) =>
+                    setEditTeamForm((f) => ({ ...f, logoUrl: e.target.value }))
+                  }
+                  placeholder='https://…  o  /logos/tigres.png'
+                />
+                <p className='text-xs text-gray-500 mt-1'>
+                  Tip: podés usar rutas como <code>/logos/tigres.png</code>.
+                </p>
+              </div>
+
+              <div>
+                <label className='text-sm'>Grupo (opcional)</label>
+                <div className='flex flex-col gap-2'>
+                  <input
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. A, B, C… (vacío para quitar grupo)'
+                    value={editTeamForm.grupo}
+                    onChange={(e) => {
+                      setEditTeamError('');
+                      setEditTeamForm((f) => ({
+                        ...f,
+                        grupo: e.target.value.toUpperCase().slice(0, 3),
+                      }));
+                    }}
+                  />
+                  {gruposActivos.length > 0 && (
+                    <div className='flex gap-2 flex-wrap'>
+                      {gruposActivos.map((g) => (
+                        <button
+                          key={g}
+                          type='button'
+                          onClick={() =>
+                            setEditTeamForm((f) => ({ ...f, grupo: g }))
+                          }
+                          className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm'
+                        >
+                          {g}
+                        </button>
+                      ))}
+                      <button
+                        type='button'
+                        onClick={() =>
+                          setEditTeamForm((f) => ({ ...f, grupo: '' }))
+                        }
+                        className='px-2 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-sm'
+                        title='Quitar grupo'
+                      >
+                        Sin grupo
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <p className='text-xs text-gray-500 mt-1'>
+                  Dejá vacío para quitar el grupo.
+                </p>
+              </div>
+
+              <div className='flex items-center justify-end gap-2 pt-2'>
+                <button
+                  type='button'
+                  onClick={() => setOpenEditTeam(false)}
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+                >
+                  Cancelar
+                </button>
+                <button
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
+                >
+                  Guardar
                 </button>
               </div>
             </form>
@@ -2600,7 +3050,7 @@ export default function Torneo() {
           onClick={() => setOpenPOConfig(false)}
         >
           <div
-            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Generar playoffs</h3>
@@ -2622,9 +3072,11 @@ export default function Torneo() {
                         checked={poN === n}
                         onChange={() => {
                           setPoN(n);
-                          setPoSeleccion(
-                            posicionesGenerales.slice(0, n).map((t) => t.id)
-                          );
+                          const ids = posicionesGenerales
+                            .slice(0, n)
+                            .map((t) => t.id);
+                          setPoSeleccion(ids);
+                          recomputePoPairs(ids, n);
                         }}
                       />
                       <span>{n}</span>
@@ -2661,7 +3113,9 @@ export default function Torneo() {
                               const set = new Set(prev);
                               if (set.has(t.id)) set.delete(t.id);
                               else if (set.size < poN) set.add(t.id);
-                              return Array.from(set);
+                              const arr = Array.from(set);
+                              recomputePoPairs(arr, poN);
+                              return arr;
                             });
                           }}
                         />
@@ -2705,6 +3159,69 @@ export default function Torneo() {
                     );
                   })()}
                 </ul>
+              </div>
+
+              {/* NUEVO: Programación inicial */}
+              <div className='rounded-xl border p-3'>
+                <div className='text-sm font-medium mb-1'>
+                  Programación inicial (fecha/hora & cancha)
+                </div>
+                {poPairs.length === 0 ? (
+                  <div className='text-xs text-gray-500'>
+                    Seleccioná {poN} equipos para ver los cruces.
+                  </div>
+                ) : (
+                  <div className='space-y-3'>
+                    {poPairs.map((pr, idx) => (
+                      <div key={idx} className='rounded-xl border p-3'>
+                        <div className='text-sm font-medium mb-2'>
+                          {equiposMap[pr.localId]} vs{' '}
+                          {equiposMap[pr.visitanteId]}
+                        </div>
+                        <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                          <div>
+                            <label className='text-sm'>Fecha & hora</label>
+                            <input
+                              type='datetime-local'
+                              className='mt-1 w-full rounded-xl border px-3 py-2'
+                              value={pr.fecha}
+                              onChange={(e) =>
+                                setPoPairs((arr) => {
+                                  const copy = arr.slice();
+                                  copy[idx] = {
+                                    ...copy[idx],
+                                    fecha: e.target.value,
+                                  };
+                                  return copy;
+                                })
+                              }
+                              required
+                            />
+                          </div>
+                          <div className='md:col-span-2'>
+                            <label className='text-sm'>Cancha</label>
+                            <input
+                              className='mt-1 w-full rounded-xl border px-3 py-2'
+                              placeholder='Ej. Club A'
+                              value={pr.cancha}
+                              onChange={(e) =>
+                                setPoPairs((arr) => {
+                                  const copy = arr.slice();
+                                  copy[idx] = {
+                                    ...copy[idx],
+                                    cancha: e.target.value,
+                                  };
+                                  return copy;
+                                })
+                              }
+                              required
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className='flex items-center justify-end gap-2'>
