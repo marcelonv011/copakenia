@@ -2103,7 +2103,7 @@ export default function Torneo() {
               ) : (
                 /* tabla */
                 <div className='overflow-x-auto'>
-                  <table className='min-w-full text-sm'>
+                  <table className='min-w-[680px] text-sm'>
                     <thead className='bg-gray-50'>
                       <tr className='text-gray-600'>
                         <th className='text-left px-4 py-2 w-10'>#</th>
@@ -2111,20 +2111,14 @@ export default function Torneo() {
                         <th className='text-center px-2 py-2 w-14'>PJ</th>
                         <th className='text-center px-2 py-2 w-14'>PG</th>
                         <th className='text-center px-2 py-2 w-14'>PP</th>
-                        <th className='text-center px-2 py-2 w-16 hidden sm:table-cell'>
-                          PF
-                        </th>
-                        <th className='text-center px-2 py-2 w-16 hidden sm:table-cell'>
-                          PC
-                        </th>
-                        <th className='text-center px-2 py-2 w-16 hidden sm:table-cell'>
-                          DIF
-                        </th>
+                        <th className='text-center px-2 py-2 w-16'>PF</th>
+                        <th className='text-center px-2 py-2 w-16'>PC</th>
                         <th className='text-center px-2 py-2 w-16'>PTS</th>
+                        <th className='text-center px-2 py-2 w-16'>DIF</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {posicionesCopas[key].map((t, i) => {
+                      {(posicionesCopas[key] || []).map((t, i) => {
                         const team = equipos.find((e) => e.id === t.id);
                         return (
                           <tr
@@ -2145,15 +2139,9 @@ export default function Torneo() {
                             <td className='px-2 py-2 text-center'>{t.pj}</td>
                             <td className='px-2 py-2 text-center'>{t.pg}</td>
                             <td className='px-2 py-2 text-center'>{t.pp}</td>
-                            <td className='px-2 py-2 text-center hidden sm:table-cell'>
-                              {t.pf}
-                            </td>
-                            <td className='px-2 py-2 text-center hidden sm:table-cell'>
-                              {t.pc}
-                            </td>
-                            <td className='px-2 py-2 text-center hidden sm:table-cell'>
-                              {t.dif}
-                            </td>
+                            <td className='px-2 py-2 text-center'>{t.pf}</td>
+                            <td className='px-2 py-2 text-center'>{t.pc}</td>
+                            <td className='px-2 py-2 text-center'>{t.dif}</td>
                             <td className='px-2 py-2 text-center font-semibold'>
                               {t.pts}
                             </td>
