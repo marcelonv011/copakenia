@@ -452,6 +452,11 @@ export default function Torneo() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('fixture');
 
+  // 👉 Flechas de tabs
+  const tabsScrollRef = useRef(null);
+  const [showLeft, setShowLeft] = useState(false);
+  const [showRight, setShowRight] = useState(false);
+
   /* Resultado (modal) */
   const [openResult, setOpenResult] = useState(false);
   const [editingMatch, setEditingMatch] = useState(null);
@@ -1622,6 +1627,34 @@ export default function Torneo() {
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
+  // 👉 Mostrar/ocultar flechas y desplazar el contenedor de tabs
+  function updateTabArrows() {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const canLeft = el.scrollLeft > 0;
+    const canRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setShowLeft(canLeft);
+    setShowRight(canRight);
+  }
+  function scrollTabs(dir = 1) {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * 220, behavior: 'smooth' });
+  }
+
+  useEffect(() => {
+    updateTabArrows();
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const onScroll = () => updateTabArrows();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', updateTabArrows);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', updateTabArrows);
+    };
+  }, [tabs.length]);
+
   // Ranking de goleadores (a partir de tops por partido)
   const goleadores = useMemo(() => {
     const acc = {};
@@ -1712,7 +1745,33 @@ export default function Torneo() {
       {/* Tabs */}
       <div className='rounded-2xl bg-white/70 backdrop-blur-md border shadow-sm'>
         <div className='relative'>
-          <div className='overflow-x-auto no-scrollbar'>
+          {/* Flecha izquierda */}
+          {showLeft && (
+            <button
+              onClick={() => scrollTabs(-1)}
+              className='absolute left-1 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white shadow ring-1 ring-black/10'
+              aria-label='Desplazar a la izquierda'
+            >
+              <IconBack />
+            </button>
+          )}
+
+          {/* Flecha derecha */}
+          {showRight && (
+            <button
+              onClick={() => scrollTabs(1)}
+              className='absolute right-1 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white shadow ring-1 ring-black/10'
+              aria-label='Desplazar a la derecha'
+            >
+              <IconBack style={{ transform: 'rotate(180deg)' }} />
+            </button>
+          )}
+
+          {/* Contenedor scrollable (con padding lateral para que no tapen las flechas) */}
+          <div
+            className='overflow-x-auto no-scrollbar px-10'
+            ref={tabsScrollRef}
+          >
             <div className='flex gap-2 p-2 min-w-max'>
               {tabs.map((t) => (
                 <button
