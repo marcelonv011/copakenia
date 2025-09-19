@@ -57,7 +57,7 @@ export default function Login() {
         <div className='relative rounded-[28px] border border-white/60 shadow-2xl bg-white/70 p-6 sm:p-10'>
           {/* LOGOS arriba del título */}
           <img
-            src='/public/logos.png'
+            src='/logos.png'
             alt='Copa Kenia'
             className='h-40 sm:h-40 w-auto mx-auto mb-2 select-none pointer-events-none'
             draggable='false'
