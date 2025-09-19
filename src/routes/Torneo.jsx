@@ -1939,7 +1939,7 @@ export default function Torneo() {
                       'Sin equipos'}
                   </div>
                   <div className='overflow-x-auto'>
-                    <table className='min-w-full text-sm'>
+                    <table className='min-w-[680px] text-sm'>
                       <thead className='bg-gray-50'>
                         <tr className='text-gray-600'>
                           <th className='text-left px-4 py-2 w-10'>#</th>
@@ -1947,6 +1947,7 @@ export default function Torneo() {
                           <th className='text-center px-2 py-2 w-14'>PJ</th>
                           <th className='text-center px-2 py-2 w-14'>PG</th>
                           <th className='text-center px-2 py-2 w-14'>PP</th>
+                          {/* 👇 ya no ocultamos en mobile */}
                           <th className='text-center px-2 py-2 w-16'>PF</th>
                           <th className='text-center px-2 py-2 w-16'>PC</th>
                           <th className='text-center px-2 py-2 w-16'>DIF</th>
@@ -1954,32 +1955,48 @@ export default function Torneo() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(posicionesPorGrupo[g] || []).length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan={9}
-                              className='text-center text-gray-500 px-4 py-6'
+                        {(posicionesPorGrupo[g] || []).map((t, i) => {
+                          const team = equipos.find((e) => e.id === t.id);
+                          return (
+                            <tr
+                              key={`${g}-${t.id}`}
+                              className='border-t odd:bg-white even:bg-gray-50'
                             >
-                              Sin datos aún.
-                            </td>
-                          </tr>
-                        ) : (
-                          (posicionesPorGrupo[g] || []).map((t, i) => (
-                            <tr key={t.id} className='border-t'>
                               <td className='px-4 py-2'>{i + 1}</td>
-                              <td className='px-4 py-2'>{t.nombre}</td>
-                              <td className='px-4 py-2 text-center'>{t.pj}</td>
-                              <td className='px-4 py-2 text-center'>{t.pg}</td>
-                              <td className='px-4 py-2 text-center'>{t.pp}</td>
-                              <td className='px-2 py-2 text-center'>{t.pf}</td>
-                              <td className='px-2 py-2 text-center'>{t.pc}</td>
-                              <td className='px-2 py-2 text-center'>{t.dif}</td>
-                              <td className='px-4 py-2 text-center font-semibold'>
+                              <td className='px-4 py-2'>
+                                <div className='flex items-center gap-2 min-w-0'>
+                                  <Avatar
+                                    name={t.nombre}
+                                    logoUrl={team?.logoUrl}
+                                    size={20}
+                                  />
+                                  <span className='truncate'>{t.nombre}</span>
+                                </div>
+                              </td>
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
+                                {t.pj}
+                              </td>
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
+                                {t.pg}
+                              </td>
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
+                                {t.pp}
+                              </td>
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
+                                {t.pf}
+                              </td>
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
+                                {t.pc}
+                              </td>
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
+                                {t.dif}
+                              </td>
+                              <td className='px-2 py-2 text-center font-semibold whitespace-nowrap'>
                                 {t.pts}
                               </td>
                             </tr>
-                          ))
-                        )}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
