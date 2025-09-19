@@ -1,4 +1,4 @@
-// src/main.jsx  (o src/index.jsx si ahí tenés el router)
+// src/main.jsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -23,7 +23,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             path='torneos'
             element={
               <RequireAuth>
-                <Torneos/>
+                <Torneos />
               </RequireAuth>
             }
           />
@@ -40,3 +40,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+// === PWA: registrar el Service Worker (usa /public/sw.js) ===
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch((err) => console.error('SW register failed:', err));
+  });
+}
