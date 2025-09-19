@@ -1722,18 +1722,16 @@ export default function Torneo() {
                 <>
                   <button
                     onClick={() => setOpenTeam(true)}
-                    className={`${BTN} ${BTN_PRIMARY} from-sky-600 to-blue-600`}
+                    className={`${BTN} ${BTN_PRIMARY} from-sky-600 to-blue-600 px-3 py-2 text-sm rounded-xl whitespace-nowrap shrink-0`}
                   >
-                    <IconPlus />{' '}
-                    <span className='hidden sm:inline'>Nuevo equipo</span>
+                    Equipo
                   </button>
 
                   <button
                     onClick={() => setOpenMatch(true)}
-                    className={`${BTN} ${BTN_PRIMARY} from-indigo-600 to-purple-600`}
+                    className={`${BTN} ${BTN_PRIMARY} from-indigo-600 to-purple-600 px-3 py-2 text-sm rounded-xl whitespace-nowrap shrink-0`}
                   >
-                    <IconPlus />{' '}
-                    <span className='hidden sm:inline'>Nuevo partido</span>
+                    Partido
                   </button>
                 </>
               )}
@@ -1743,59 +1741,73 @@ export default function Torneo() {
       </div>
 
       {/* Tabs */}
-      <div className='rounded-2xl bg-white/70 backdrop-blur-md border shadow-sm'>
+      <div className='rounded-2xl bg-white/80 backdrop-blur-md border shadow-sm'>
         <div className='relative'>
+          {/* fundido lateral */}
+          <div className='pointer-events-none absolute left-0 top-0 h-full w-10 bg-gradient-to-r from-white/90 to-transparent rounded-l-2xl' />
+          <div className='pointer-events-none absolute right-0 top-0 h-full w-10 bg-gradient-to-l from-white/90 to-transparent rounded-r-2xl' />
+
           {/* Flecha izquierda */}
           {showLeft && (
             <button
               onClick={() => scrollTabs(-1)}
-              className='absolute left-1 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white shadow ring-1 ring-black/10'
+              className='absolute left-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur-sm shadow ring-1 ring-black/10 hover:shadow-md active:scale-95'
               aria-label='Desplazar a la izquierda'
             >
               <IconBack />
             </button>
           )}
 
-          {/* Flecha derecha */}
+          {/* Flecha derecha (IconBack rotado) */}
           {showRight && (
             <button
               onClick={() => scrollTabs(1)}
-              className='absolute right-1 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white shadow ring-1 ring-black/10'
+              className='absolute right-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur-sm shadow ring-1 ring-black/10 hover:shadow-md active:scale-95'
               aria-label='Desplazar a la derecha'
             >
               <IconBack style={{ transform: 'rotate(180deg)' }} />
             </button>
           )}
 
-          {/* Contenedor scrollable (con padding lateral para que no tapen las flechas) */}
+          {/* Contenedor scrollable */}
           <div
-            className='overflow-x-auto no-scrollbar px-10'
+            className='overflow-x-auto no-scrollbar px-9'
             ref={tabsScrollRef}
+            onScroll={updateTabArrows}
           >
             <div className='flex gap-2 p-2 min-w-max'>
-              {tabs.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`px-4 py-2 rounded-xl text-sm border transition whitespace-nowrap ${
-                    tab === t
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white hover:bg-gray-50'
-                  }`}
-                >
-                  {
+              {tabs.map((t) => {
+                const active = tab === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    className={[
+                      'relative px-4 py-2 rounded-xl text-sm border transition whitespace-nowrap',
+                      active
+                        ? 'text-white border-transparent bg-gradient-to-r from-slate-800 to-gray-900 shadow-sm'
+                        : 'bg-white hover:bg-gray-50',
+                    ].join(' ')}
+                  >
                     {
-                      fixture: 'Fixture',
-                      resultados: 'Resultados',
-                      posiciones: 'Posiciones',
-                      'pos-copas': 'Posiciones copas',
-                      goleadores: 'Goleadores',
-                      equipos: 'Equipos',
-                      fase: 'Fase final',
-                    }[t]
-                  }
-                </button>
-              ))}
+                      {
+                        fixture: 'Fixture',
+                        resultados: 'Resultados',
+                        posiciones: 'Posiciones',
+                        'pos-copas': 'Posiciones copas',
+                        goleadores: 'Goleadores',
+                        equipos: 'Equipos',
+                        fase: 'Fase final',
+                      }[t]
+                    }
+
+                    {/* subrayado sutil al estar activo */}
+                    {active && (
+                      <span className='absolute left-3 right-3 -bottom-[6px] h-[3px] rounded-full bg-gray-900/80' />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2195,9 +2207,11 @@ export default function Torneo() {
             {canManage && (
               <button
                 onClick={() => setOpenTeam(true)}
-                className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
+                className='inline-flex items-center gap-2 px-3 py-2 text-sm rounded-xl text-white
+               bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700
+               whitespace-nowrap shrink-0'
               >
-                <IconPlus /> Nuevo equipo
+                Nuevo equipo
               </button>
             )}
           </div>
