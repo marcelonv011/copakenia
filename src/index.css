@@ -10,6 +10,14 @@
   isolation: isolate; /* stacking context */
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Copa + viñetas + velo para mejorar la lectura */
 .app-bg::before {
   content: '';

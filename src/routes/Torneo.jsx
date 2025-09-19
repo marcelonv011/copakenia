@@ -298,6 +298,26 @@ const ganadorDe = (match, sl, sv) => {
   return sl > sv ? match.localId : match.visitanteId;
 };
 
+/* ---------- Button style helpers (global, compacto) ---------- */
+const BTN =
+  // móvil: compacto por defecto
+  'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-medium ' +
+  'shadow-sm ring-1 ring-black/5 transition ' +
+  // desktop: igual o levemente más chico
+  'sm:px-3 sm:py-2 sm:text-sm';
+
+const BTN_FULL = 'w-full sm:w-auto';
+
+const BTN_SOFT = 'bg-white border hover:bg-gray-50 active:bg-gray-100';
+
+const BTN_PRIMARY =
+  'text-white bg-gradient-to-r from-blue-600 to-indigo-600 sm:hover:from-blue-700 sm:hover:to-indigo-700';
+
+const BTN_WARN = 'text-white bg-amber-500 sm:hover:bg-amber-600';
+const BTN_DANGER = 'text-white bg-red-600 sm:hover:bg-red-700';
+const BTN_MUTED = 'bg-gray-100 hover:bg-gray-200';
+const BTN_DARK = 'text-white bg-gray-900 sm:hover:bg-black';
+
 /* Tarjeta partido (lista) */
 function MatchRow({
   localId,
@@ -320,88 +340,100 @@ function MatchRow({
 
   return (
     <div className='bg-white rounded-2xl shadow-sm border p-4'>
-      <div className='flex items-start justify-between gap-2'>
-        <div className='min-w-0 w-full'>
-          <div className='font-semibold flex items-center gap-2 flex-wrap'>
-            <Avatar name={equiposMap[localId]} logoUrl={logoL} />{' '}
+      {/* Cabecera: equipos */}
+      <div className='flex items-center gap-3'>
+        <Avatar name={equiposMap[localId]} logoUrl={logoL} size={28} />
+        <div className='min-w-0 flex-1'>
+          <div className='font-semibold truncate'>
             {equiposMap[localId] || 'Local'}
-            {isResult ? (
-              <>
-                <span className='px-2 py-0.5 rounded bg-gray-100'>
-                  {typeof scoreLocal === 'number' ? scoreLocal : '-'}
-                </span>
-                <span className='text-gray-400'>–</span>
-                <span className='px-2 py-0.5 rounded bg-gray-100'>
-                  {typeof scoreVisitante === 'number' ? scoreVisitante : '-'}
-                </span>
-              </>
-            ) : (
-              <span className='mx-1 text-gray-400'>vs</span>
-            )}
-            <span className='truncate'>
-              {equiposMap[visitanteId] || 'Visitante'}
-            </span>
-            <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
           </div>
-
-          <div className='text-sm text-gray-500'>
+          <div className='text-xs text-gray-500 sm:hidden truncate'>
             {fmtFecha(ts)}
             {cancha ? ` · ${cancha}` : ''}
           </div>
+        </div>
 
-          {isResult && (tops?.local?.nombre || tops?.visitante?.nombre) && (
-            <div className='mt-1 text-sm text-gray-700'>
-              {tops?.local?.nombre && (
-                <span className='mr-3'>
-                  <b>{equiposMap[localId] || 'Local'}:</b> {tops.local.nombre} (
-                  {tops.local.puntos ?? 0})
-                </span>
-              )}
-              {tops?.visitante?.nombre && (
-                <span>
-                  <b>{equiposMap[visitanteId] || 'Visitante'}:</b>{' '}
-                  {tops.visitante.nombre} ({tops.visitante.puntos ?? 0})
-                </span>
-              )}
+        {/* Score / VS */}
+        <div className='text-center px-2'>
+          {isResult ? (
+            <div className='flex items-center gap-1 text-lg sm:text-xl font-semibold'>
+              <span className='px-2 py-0.5 rounded bg-gray-100 min-w-[2.25rem] text-center'>
+                {typeof scoreLocal === 'number' ? scoreLocal : '-'}
+              </span>
+              <span className='text-gray-400'>–</span>
+              <span className='px-2 py-0.5 rounded bg-gray-100 min-w-[2.25rem] text-center'>
+                {typeof scoreVisitante === 'number' ? scoreVisitante : '-'}
+              </span>
+            </div>
+          ) : (
+            <div className='text-gray-400 text-sm'>vs</div>
+          )}
+        </div>
+
+        <div className='min-w-0 text-right'>
+          <div className='font-semibold truncate'>
+            {equiposMap[visitanteId] || 'Visitante'}
+          </div>
+          <div className='text-xs text-gray-500 sm:hidden truncate'>&nbsp;</div>
+        </div>
+        <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} size={28} />
+      </div>
+
+      {/* Meta (solo desktop) */}
+      <div className='hidden sm:flex text-sm text-gray-500 mt-1'>
+        {fmtFecha(ts)}
+        {cancha ? ` · ${cancha}` : ''}
+      </div>
+
+      {/* Tops (si existen) */}
+      {isResult && (tops?.local?.nombre || tops?.visitante?.nombre) && (
+        <div className='mt-2 text-sm text-gray-700 space-y-1'>
+          {tops?.local?.nombre && (
+            <div>
+              <b>{equiposMap[localId] || 'Local'}:</b> {tops.local.nombre} (
+              {tops.local.puntos ?? 0})
             </div>
           )}
-
-          {canManage && (
-            <div className='flex flex-col sm:flex-row gap-2 mt-3'>
-              <button
-                onClick={onEditScore}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white ${
-                  isResult
-                    ? 'bg-amber-500 hover:bg-amber-600'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
-                }`}
-                title={isResult ? 'Editar resultado' : 'Cargar resultado'}
-              >
-                {isResult ? <IconEdit /> : <IconScore />}
-                {isResult ? 'Editar' : 'Cargar'}
-              </button>
-
-              {isResult && onRevert && (
-                <button
-                  onClick={onRevert}
-                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
-                  title='Revertir a pendiente'
-                >
-                  Revertir
-                </button>
-              )}
-
-              <button
-                onClick={onDelete}
-                className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
-                title='Eliminar partido'
-              >
-                <IconTrash />
-              </button>
+          {tops?.visitante?.nombre && (
+            <div>
+              <b>{equiposMap[visitanteId] || 'Visitante'}:</b>{' '}
+              {tops.visitante.nombre} ({tops.visitante.puntos ?? 0})
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* Acciones */}
+      {canManage && (
+        <div className='flex flex-wrap gap-2 mt-3'>
+          <button
+            onClick={onEditScore}
+            className={`${BTN} ${isResult ? BTN_WARN : BTN_PRIMARY}`}
+            title={isResult ? 'Editar resultado' : 'Cargar resultado'}
+          >
+            {isResult ? <IconEdit /> : <IconScore />}
+            {isResult ? 'Editar' : 'Cargar'}
+          </button>
+
+          {isResult && onRevert && (
+            <button
+              onClick={onRevert}
+              className={`${BTN} ${BTN_MUTED}`}
+              title='Revertir a pendiente'
+            >
+              Revertir
+            </button>
+          )}
+
+          <button
+            onClick={onDelete}
+            className={`${BTN} ${BTN_DANGER}`}
+            title='Eliminar partido'
+          >
+            <IconTrash />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1657,17 +1689,18 @@ export default function Torneo() {
                 <>
                   <button
                     onClick={() => setOpenTeam(true)}
-                    className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
-                    title='Nuevo equipo'
+                    className={`${BTN} ${BTN_PRIMARY} from-sky-600 to-blue-600`}
                   >
-                    <IconPlus /> Equipo
+                    <IconPlus />{' '}
+                    <span className='hidden sm:inline'>Nuevo equipo</span>
                   </button>
+
                   <button
                     onClick={() => setOpenMatch(true)}
-                    className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
-                    title='Nuevo partido'
+                    className={`${BTN} ${BTN_PRIMARY} from-indigo-600 to-purple-600`}
                   >
-                    <IconPlus /> Partido
+                    <IconPlus />{' '}
+                    <span className='hidden sm:inline'>Nuevo partido</span>
                   </button>
                 </>
               )}
@@ -1677,31 +1710,35 @@ export default function Torneo() {
       </div>
 
       {/* Tabs */}
-      <div className='rounded-2xl bg-white/70 backdrop-blur-md border shadow-sm p-2'>
-        <div className='flex items-center gap-2 flex-wrap'>
-          {tabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-xl text-sm border transition ${
-                tab === t
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white hover:bg-gray-50'
-              }`}
-            >
-              {
-                {
-                  fixture: 'Fixture',
-                  resultados: 'Resultados',
-                  posiciones: 'Posiciones',
-                  'pos-copas': 'Posiciones copas', // << AGREGAR
-                  goleadores: 'Máximos goleadores',
-                  equipos: 'Equipos',
-                  fase: 'Fase final',
-                }[t]
-              }
-            </button>
-          ))}
+      <div className='rounded-2xl bg-white/70 backdrop-blur-md border shadow-sm'>
+        <div className='relative'>
+          <div className='overflow-x-auto no-scrollbar'>
+            <div className='flex gap-2 p-2 min-w-max'>
+              {tabs.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`px-4 py-2 rounded-xl text-sm border transition whitespace-nowrap ${
+                    tab === t
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white hover:bg-gray-50'
+                  }`}
+                >
+                  {
+                    {
+                      fixture: 'Fixture',
+                      resultados: 'Resultados',
+                      posiciones: 'Posiciones',
+                      'pos-copas': 'Posiciones copas',
+                      goleadores: 'Goleadores',
+                      equipos: 'Equipos',
+                      fase: 'Fase final',
+                    }[t]
+                  }
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2138,7 +2175,7 @@ export default function Torneo() {
                     <div className='flex items-center justify-end gap-2 pt-1'>
                       <button
                         onClick={() => abrirEditarEquipo(e)}
-                        className='w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                        className={`${BTN} ${BTN_SOFT}`}
                         title='Editar equipo'
                       >
                         <IconEdit />
@@ -2146,7 +2183,7 @@ export default function Torneo() {
                       </button>
                       <button
                         onClick={() => borrarEquipo(e.id)}
-                        className='w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
+                        className={`${BTN} ${BTN_DANGER}`}
                         title='Eliminar equipo'
                       >
                         <IconTrash />
@@ -2228,13 +2265,12 @@ export default function Torneo() {
                   </button>
                 </div>
               </div>
-
               {/* Posiciones por copa → botón que lleva a la pestaña Posiciones */}
               <div className='mt-4 rounded-2xl border p-4 bg-white'>
                 <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3'>
                   <div>
                     <h4 className='font-semibold text-lg'>
-                      Posiciones por copa
+                      Posiciones de la fase de grupos
                     </h4>
                     <p className='text-sm text-gray-600'>
                       Consultá la tabla completa (general y por grupos) en la
@@ -2251,7 +2287,6 @@ export default function Torneo() {
                   </button>
                 </div>
               </div>
-
               {/* OTROS BLOQUES (debajo, sin compartir fila con posiciones) */}
               <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
                 <div className='rounded-2xl border p-4'>
@@ -2306,73 +2341,75 @@ export default function Torneo() {
                   </div>
                 </div>
 
-                <div className='rounded-2xl border p-4'>
-                  <div className='text-sm font-medium mb-2'>Acciones</div>
-                  <div className='flex flex-col gap-2'>
-                    <button
-                      onClick={asignarCopasAuto}
-                      className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
-                    >
-                      Asignar recomendación
-                    </button>
-                    <button
-                      onClick={abrirCopasManual}
-                      className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
-                    >
-                      Elegir manualmente…
-                    </button>
-                    <button
-                      onClick={autoRellenarCopas}
-                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
-                    >
-                      Autorrellenar{' '}
-                      {gruposActivos.length >= 2
-                        ? 'por grupos'
-                        : 'por posiciones'}
-                    </button>
-                    <div className='flex flex-wrap gap-2 pt-1'>
+                {canManage && (
+                  <div className='rounded-2xl border p-4'>
+                    <div className='text-sm font-medium mb-2'>Acciones</div>
+                    <div className='flex flex-col gap-2'>
                       <button
-                        onClick={() =>
-                          abrirModalFixtureCopa(
-                            'copa-oro',
-                            faseCopas?.oro || []
-                          )
-                        }
-                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        onClick={asignarCopasAuto}
+                        className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                       >
-                        Mini-fixture (Oro)
+                        Asignar recomendación
                       </button>
                       <button
-                        onClick={() =>
-                          abrirModalFixtureCopa(
-                            'copa-plata',
-                            faseCopas?.plata || []
-                          )
-                        }
-                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        onClick={abrirCopasManual}
+                        className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
                       >
-                        Mini-fixture (Plata)
+                        Elegir manualmente…
                       </button>
                       <button
-                        onClick={() =>
-                          abrirModalFixtureCopa(
-                            'copa-bronce',
-                            faseCopas?.bronce || []
-                          )
-                        }
+                        onClick={autoRellenarCopas}
                         className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        Mini-fixture (Bronce)
+                        Autorrellenar{' '}
+                        {gruposActivos.length >= 2
+                          ? 'por grupos'
+                          : 'por posiciones'}
                       </button>
+                      <div className='flex flex-wrap gap-2 pt-1'>
+                        <button
+                          onClick={() =>
+                            abrirModalFixtureCopa(
+                              'copa-oro',
+                              faseCopas?.oro || []
+                            )
+                          }
+                          className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        >
+                          Mini-fixture (Oro)
+                        </button>
+                        <button
+                          onClick={() =>
+                            abrirModalFixtureCopa(
+                              'copa-plata',
+                              faseCopas?.plata || []
+                            )
+                          }
+                          className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        >
+                          Mini-fixture (Plata)
+                        </button>
+                        <button
+                          onClick={() =>
+                            abrirModalFixtureCopa(
+                              'copa-bronce',
+                              faseCopas?.bronce || []
+                            )
+                          }
+                          className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                        >
+                          Mini-fixture (Bronce)
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
+                )}
+              </div>{' '}
+              {/* ← CIERRE de la grilla de 3 columnas */}
               {/* Acciones debajo (a todo el ancho en mobile) */}
-              <div className='mt-4 rounded-2xl border p-4'>
-                <div className='text-sm font-medium mb-2'>Acciones</div>
-                {canManage ? (
+              {canManage && (
+                <div className='mt-4 rounded-2xl border p-4'>
+                  <div className='text-sm font-medium mb-2'>Acciones</div>
                   <div className='flex flex-col sm:flex-row flex-wrap gap-2'>
                     <button
                       onClick={asignarCopasAuto}
@@ -2426,11 +2463,67 @@ export default function Torneo() {
                       Mini-fixture (Bronce)
                     </button>
                   </div>
-                ) : (
-                  <div className='text-xs text-gray-500'>Solo admin</div>
-                )}
-              </div>
-
+                </div>
+              )}
+              {/* Acciones debajo (a todo el ancho en mobile) */}
+              {canManage && (
+                <div className='mt-4 rounded-2xl border p-4'>
+                  <div className='text-sm font-medium mb-2'>Acciones</div>
+                  <div className='flex flex-col sm:flex-row flex-wrap gap-2'>
+                    <button
+                      onClick={asignarCopasAuto}
+                      className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
+                    >
+                      Asignar recomendación
+                    </button>
+                    <button
+                      onClick={abrirCopasManual}
+                      className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
+                    >
+                      Elegir manualmente…
+                    </button>
+                    <button
+                      onClick={autoRellenarCopas}
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Autorrellenar{' '}
+                      {gruposActivos.length >= 2
+                        ? 'por grupos'
+                        : 'por posiciones'}
+                    </button>
+                    <button
+                      onClick={() =>
+                        abrirModalFixtureCopa('copa-oro', faseCopas?.oro || [])
+                      }
+                      className='mt-2 sm:mt-0 px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Mini-fixture (Oro)
+                    </button>
+                    <button
+                      onClick={() =>
+                        abrirModalFixtureCopa(
+                          'copa-plata',
+                          faseCopas?.plata || []
+                        )
+                      }
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Mini-fixture (Plata)
+                    </button>
+                    <button
+                      onClick={() =>
+                        abrirModalFixtureCopa(
+                          'copa-bronce',
+                          faseCopas?.bronce || []
+                        )
+                      }
+                      className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
+                    >
+                      Mini-fixture (Bronce)
+                    </button>
+                  </div>
+                </div>
+              )}
               {(cupMatches['copa-oro'].length ||
                 cupMatches['copa-plata'].length ||
                 cupMatches['copa-bronce'].length) && (
@@ -2564,7 +2657,7 @@ export default function Torneo() {
           onClick={closeResultado}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Cargar resultado</h3>
@@ -2599,7 +2692,7 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-2 00'
+                    className='mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200'
                     value={scoreLocal}
                     onChange={(e) => setScoreLocal(e.target.value)}
                     required
@@ -2613,9 +2706,9 @@ export default function Torneo() {
                     type='number'
                     min={0}
                     inputMode='numeric'
-                    className='mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200'
-                    value={scoreVisitante}
-                    onChange={(e) => setScoreVisitante(e.target.value)}
+                    className='mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200'
+                    value={scoreLocal}
+                    onChange={(e) => setScoreLocal(e.target.value)}
                     required
                   />
                 </div>
@@ -2695,7 +2788,7 @@ export default function Torneo() {
           onClick={() => setOpenPOProgram(false)}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-1'>
@@ -2776,7 +2869,7 @@ export default function Torneo() {
           onClick={() => setOpenMatch(false)}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Nuevo partido</h3>
@@ -2875,7 +2968,7 @@ export default function Torneo() {
           onClick={() => setOpenTeam(false)}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Nuevo equipo</h3>
@@ -3099,7 +3192,7 @@ export default function Torneo() {
           onClick={() => setOpenEditTeam(false)}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>Editar equipo</h3>
@@ -3301,7 +3394,7 @@ export default function Torneo() {
           onClick={cancelarBorrarPartido}
         >
           <div
-            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className='text-lg font-semibold mb-3'>
