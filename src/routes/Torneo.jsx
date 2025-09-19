@@ -1942,15 +1942,15 @@ export default function Torneo() {
                     <table className='min-w-full text-sm'>
                       <thead className='bg-gray-50'>
                         <tr className='text-gray-600'>
-                          <th className='text-left px-4 py-2'>#</th>
+                          <th className='text-left px-4 py-2 w-10'>#</th>
                           <th className='text-left px-4 py-2'>Equipo</th>
-                          <th className='text-center px-4 py-2'>PJ</th>
-                          <th className='text-center px-4 py-2'>PG</th>
-                          <th className='text-center px-4 py-2'>PP</th>
-                          <th className='text-center px-4 py-2'>PF</th>
-                          <th className='text-center px-4 py-2'>PC</th>
-                          <th className='text-center px-4 py-2'>DIF</th>
-                          <th className='text-center px-4 py-2'>PTS</th>
+                          <th className='text-center px-2 py-2 w-14'>PJ</th>
+                          <th className='text-center px-2 py-2 w-14'>PG</th>
+                          <th className='text-center px-2 py-2 w-14'>PP</th>
+                          <th className='text-center px-2 py-2 w-16'>PF</th>
+                          <th className='text-center px-2 py-2 w-16'>PC</th>
+                          <th className='text-center px-2 py-2 w-16'>DIF</th>
+                          <th className='text-center px-2 py-2 w-16'>PTS</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1971,9 +1971,9 @@ export default function Torneo() {
                               <td className='px-4 py-2 text-center'>{t.pj}</td>
                               <td className='px-4 py-2 text-center'>{t.pg}</td>
                               <td className='px-4 py-2 text-center'>{t.pp}</td>
-                              <td className='px-4 py-2 text-center'>{t.pf}</td>
-                              <td className='px-4 py-2 text-center'>{t.pc}</td>
-                              <td className='px-4 py-2 text-center'>{t.dif}</td>
+                              <td className='px-2 py-2 text-center'>{t.pf}</td>
+                              <td className='px-2 py-2 text-center'>{t.pc}</td>
+                              <td className='px-2 py-2 text-center'>{t.dif}</td>
                               <td className='px-4 py-2 text-center font-semibold'>
                                 {t.pts}
                               </td>
@@ -1988,7 +1988,7 @@ export default function Torneo() {
             </div>
           ) : (
             <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
-              <table className='min-w-full text-sm'>
+              <table className='min-w-[680px] sm:min-w-full text-sm'>
                 <thead className='bg-gray-50'>
                   <tr className='text-gray-600'>
                     <th className='text-left px-4 py-2'>#</th>
