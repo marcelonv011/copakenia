@@ -2663,8 +2663,8 @@ export default function Torneo() {
                     min={0}
                     inputMode='numeric'
                     className='mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200'
-                    value={scoreLocal}
-                    onChange={(e) => setScoreLocal(e.target.value)}
+                    value={scoreVisitante} // <-- antes decía scoreLocal
+                    onChange={(e) => setScoreVisitante(e.target.value)} // <-- antes setScoreLocal
                     required
                   />
                 </div>
