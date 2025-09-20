@@ -229,6 +229,21 @@ function fmtFecha(ts) {
   return `${fecha} · ${hora}`;
 }
 
+/* === Helpers de fecha LOCAL para agrupar y mostrar === */
+function ymdLocal(d) {
+  // Devuelve 'YYYY-MM-DD' en **hora local**
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+function labelFromYMD(ymd) {
+  // ymd = 'YYYY-MM-DD' -> etiqueta local (evitamos parsear UTC)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return "Sin fecha";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString();
+}
+
 /* Tabla posiciones builder */
 function buildTable(partidosFinalizados, equiposMap) {
   const table = {};
@@ -507,10 +522,11 @@ export default function Torneo() {
     interzonal: false,
   });
 
-    // Devuelve equipos elegibles para el select de "local" o "visitante"
+  // Devuelve equipos elegibles para el select de "local" o "visitante"
   const elegiblesPara = (side) => {
     const inter = matchForm.interzonal;
-    const otherId = side === "local" ? matchForm.visitanteId : matchForm.localId;
+    const otherId =
+      side === "local" ? matchForm.visitanteId : matchForm.localId;
     const otherGroup = groupOf(otherId); // "A" | "B" | "" (sin grupo)
 
     return equipos
@@ -520,13 +536,13 @@ export default function Torneo() {
 
         if (inter) {
           // Interzonal: deben ser de grupos distintos y ambos con grupo
-          if (!g) return false;             // sin grupo, no va en interzonal
+          if (!g) return false; // sin grupo, no va en interzonal
           if (otherGroup) return g !== otherGroup;
           return true; // si el otro no está elegido (o sin grupo), mostrar los que sí tienen grupo
         } else {
           // NO interzonal
           if (otherGroup) {
-            if (!g) return true;     // permitir combinar con "sin grupo"
+            if (!g) return true; // permitir combinar con "sin grupo"
             return g === otherGroup; // mismo grupo
           }
           return true; // si el otro no tiene grupo, cualquiera
@@ -537,7 +553,6 @@ export default function Torneo() {
 
   const [openTeam, setOpenTeam] = useState(false);
 
-  
   const [teamForm, setTeamForm] = useState({
     nombre: "",
     logoUrl: "",
@@ -932,9 +947,8 @@ export default function Torneo() {
   const fixtureGrouped = useMemo(() => {
     const byDate = {};
     for (const p of fixture) {
-      const key = p.dia?.seconds
-        ? new Date(p.dia.seconds * 1000).toISOString().slice(0, 10)
-        : "Sin fecha";
+      const d = p.dia?.seconds ? new Date(p.dia.seconds * 1000) : null;
+      const key = d ? ymdLocal(d) : "Sin fecha"; // 👈 clave en horario local
       (byDate[key] ||= []).push(p);
     }
     return Object.keys(byDate)
@@ -1992,8 +2006,9 @@ export default function Torneo() {
                 <div className="text-sm text-gray-500">
                   {dateKey === "Sin fecha"
                     ? "Sin fecha"
-                    : new Date(dateKey).toLocaleDateString()}
+                    : labelFromYMD(dateKey)}
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {matches.map((p) => (
                     <MatchRow
@@ -3008,43 +3023,43 @@ export default function Torneo() {
                 {/* LOCAL */}
                 <div>
                   <label className="text-sm">Local</label>
-                                  <select
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  value={matchForm.localId}
-                  onChange={(e) => {
-                    const nextLocal = e.target.value;
-                    const gL = groupOf(nextLocal);
-                    const gV = groupOf(matchForm.visitanteId);
-                    // Si es interzonal y el visitante pertenece al mismo grupo, lo limpio
-                    if (
-                      matchForm.interzonal &&
-                      nextLocal &&
-                      matchForm.visitanteId &&
-                      gL &&
-                      gV &&
-                      gL === gV
-                    ) {
-                      setMatchForm((f) => ({
-                        ...f,
-                        localId: nextLocal,
-                        visitanteId: "",
-                      }));
-                    } else {
-                      setMatchForm((f) => ({ ...f, localId: nextLocal }));
-                    }
-                  }}
-                  required
-                >
-                  <option value="">Elegir…</option>
-                  {elegiblesPara("local").map((e) => {
-                    const gOpt = groupOf(e.id);
-                    return (
-                      <option key={e.id} value={e.id}>
-                        {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
+                  <select
+                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    value={matchForm.localId}
+                    onChange={(e) => {
+                      const nextLocal = e.target.value;
+                      const gL = groupOf(nextLocal);
+                      const gV = groupOf(matchForm.visitanteId);
+                      // Si es interzonal y el visitante pertenece al mismo grupo, lo limpio
+                      if (
+                        matchForm.interzonal &&
+                        nextLocal &&
+                        matchForm.visitanteId &&
+                        gL &&
+                        gV &&
+                        gL === gV
+                      ) {
+                        setMatchForm((f) => ({
+                          ...f,
+                          localId: nextLocal,
+                          visitanteId: "",
+                        }));
+                      } else {
+                        setMatchForm((f) => ({ ...f, localId: nextLocal }));
+                      }
+                    }}
+                    required
+                  >
+                    <option value="">Elegir…</option>
+                    {elegiblesPara("local").map((e) => {
+                      const gOpt = groupOf(e.id);
+                      return (
+                        <option key={e.id} value={e.id}>
+                          {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
                   {/* chip de grupo del local */}
                   {matchForm.localId && (
                     <div className="text-xs text-gray-500 mt-1">
@@ -3056,43 +3071,43 @@ export default function Torneo() {
                 {/* VISITANTE */}
                 <div>
                   <label className="text-sm">Visitante</label>
-                                  <select
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  value={matchForm.visitanteId}
-                  onChange={(e) => {
-                    const nextVis = e.target.value;
-                    const gL = groupOf(matchForm.localId);
-                    const gV = groupOf(nextVis);
-                    // Si es interzonal y el local pertenece al mismo grupo, lo limpio
-                    if (
-                      matchForm.interzonal &&
-                      nextVis &&
-                      matchForm.localId &&
-                      gL &&
-                      gV &&
-                      gL === gV
-                    ) {
-                      setMatchForm((f) => ({
-                        ...f,
-                        visitanteId: nextVis,
-                        localId: "",
-                      }));
-                    } else {
-                      setMatchForm((f) => ({ ...f, visitanteId: nextVis }));
-                    }
-                  }}
-                  required
-                >
-                  <option value="">Elegir…</option>
-                  {elegiblesPara("visitante").map((e) => {
-                    const gOpt = groupOf(e.id);
-                    return (
-                      <option key={e.id} value={e.id}>
-                        {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
+                  <select
+                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    value={matchForm.visitanteId}
+                    onChange={(e) => {
+                      const nextVis = e.target.value;
+                      const gL = groupOf(matchForm.localId);
+                      const gV = groupOf(nextVis);
+                      // Si es interzonal y el local pertenece al mismo grupo, lo limpio
+                      if (
+                        matchForm.interzonal &&
+                        nextVis &&
+                        matchForm.localId &&
+                        gL &&
+                        gV &&
+                        gL === gV
+                      ) {
+                        setMatchForm((f) => ({
+                          ...f,
+                          visitanteId: nextVis,
+                          localId: "",
+                        }));
+                      } else {
+                        setMatchForm((f) => ({ ...f, visitanteId: nextVis }));
+                      }
+                    }}
+                    required
+                  >
+                    <option value="">Elegir…</option>
+                    {elegiblesPara("visitante").map((e) => {
+                      const gOpt = groupOf(e.id);
+                      return (
+                        <option key={e.id} value={e.id}>
+                          {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
                   {/* chip de grupo del visitante */}
                   {matchForm.visitanteId && (
                     <div className="text-xs text-gray-500 mt-1">
