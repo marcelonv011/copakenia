@@ -229,6 +229,17 @@ function fmtFecha(ts) {
   return `${fecha} · ${hora}`;
 }
 
+/* Devuelve 'YYYY-MM-DDTHH:mm' en HORA LOCAL para inputs datetime-local */
+function toDatetimeLocalValue(d) {
+  if (!(d instanceof Date)) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
 /* === Helpers de fecha LOCAL para agrupar y mostrar === */
 function ymdLocal(d) {
   // Devuelve 'YYYY-MM-DD' en **hora local**
@@ -715,9 +726,11 @@ export default function Torneo() {
     fechaExistente,
     canchaExistente,
   }) {
-    const porDefecto = new Date(Date.now() + 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 16);
+    // default = dentro de 1 hora, formateado en hora LOCAL
+    const porDefecto = toDatetimeLocalValue(
+      new Date(Date.now() + 60 * 60 * 1000)
+    );
+
     const faseLabel =
       { cuartos: "Cuartos de final", semi: "Semifinal", final: "Final" }[
         fase
@@ -730,8 +743,9 @@ export default function Torneo() {
       poSlot,
       localId,
       visitanteId,
+      // si hay fecha guardada, mostrar exactamente esa en local; si no, porDefecto
       fecha: fechaExistente
-        ? new Date(fechaExistente.seconds * 1000).toISOString().slice(0, 16)
+        ? toDatetimeLocalValue(new Date(fechaExistente.seconds * 1000))
         : porDefecto,
       cancha: canchaExistente || "",
     });
@@ -1204,7 +1218,7 @@ export default function Torneo() {
     setMetaMatch(match);
     setMetaFecha(
       match?.dia?.seconds
-        ? new Date(match.dia.seconds * 1000).toISOString().slice(0, 16) // yyyy-MM-ddTHH:mm
+        ? toDatetimeLocalValue(new Date(match.dia.seconds * 1000))
         : ""
     );
     setMetaCancha(match?.cancha || "");
