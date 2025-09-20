@@ -329,6 +329,7 @@ function MatchRow({
   ts,
   cancha,
   onEditScore,
+  onEditMeta,
   onDelete,
   onRevert,
   canManage,
@@ -341,49 +342,64 @@ function MatchRow({
   return (
     <div className='bg-white rounded-2xl shadow-sm border p-4'>
       {/* Cabecera: equipos */}
-      <div className='flex items-center gap-3'>
-        <Avatar name={equiposMap[localId]} logoUrl={logoL} size={28} />
-        <div className='min-w-0 flex-1'>
-          <div className='font-semibold truncate'>
-            {equiposMap[localId] || 'Local'}
-          </div>
-          <div className='text-xs text-gray-500 sm:hidden truncate'>
-            {fmtFecha(ts)}
-            {cancha ? ` · ${cancha}` : ''}
-          </div>
-        </div>
+      {/* Header de equipos (NUEVO) */}
+<div className='font-semibold text-base sm:text-[1rem]'>
+  {/* En móvil apila y no corta; en desktop va en una fila */}
+  <div className='sm:flex sm:items-center sm:flex-wrap sm:gap-2'>
+    {/* Local */}
+    <div className='flex items-center gap-2 min-w-0'>
+      <Avatar name={equiposMap[localId]} logoUrl={logoL} />
+      <span className='min-w-0 break-words'>
+        {equiposMap[localId] || 'Local'}
+      </span>
+    </div>
 
-        {/* Score / VS */}
-        <div className='text-center px-2'>
-          {isResult ? (
-            <div className='flex items-center gap-1 text-lg sm:text-xl font-semibold'>
-              <span className='px-2 py-0.5 rounded bg-gray-100 min-w-[2.25rem] text-center'>
-                {typeof scoreLocal === 'number' ? scoreLocal : '-'}
-              </span>
-              <span className='text-gray-400'>–</span>
-              <span className='px-2 py-0.5 rounded bg-gray-100 min-w-[2.25rem] text-center'>
-                {typeof scoreVisitante === 'number' ? scoreVisitante : '-'}
-              </span>
-            </div>
-          ) : (
-            <div className='text-gray-400 text-sm'>vs</div>
-          )}
-        </div>
-
-        <div className='min-w-0 text-right'>
-          <div className='font-semibold truncate'>
-            {equiposMap[visitanteId] || 'Visitante'}
-          </div>
-          <div className='text-xs text-gray-500 sm:hidden truncate'>&nbsp;</div>
-        </div>
-        <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} size={28} />
+    {/* Separador */}
+    {isResult ? (
+      <div className='flex items-center gap-1 my-1 sm:my-0 sm:mx-1'>
+        <span className='px-2 py-0.5 rounded bg-gray-100'>
+          {typeof scoreLocal === 'number' ? scoreLocal : '-'}
+        </span>
+        <span className='text-gray-400'>–</span>
+        <span className='px-2 py-0.5 rounded bg-gray-100'>
+          {typeof scoreVisitante === 'number' ? scoreVisitante : '-'}
+        </span>
       </div>
+    ) : (
+      <span className='text-gray-400 my-1 sm:my-0 sm:mx-1'>vs</span>
+    )}
+
+    {/* Visitante */}
+    <div className='flex items-center gap-2 min-w-0'>
+      <span className='min-w-0 break-words'>
+        {equiposMap[visitanteId] || 'Visitante'}
+      </span>
+      <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
+    </div>
+  </div>
+</div>
+
 
       {/* Meta (solo desktop) */}
-      <div className='hidden sm:flex text-sm text-gray-500 mt-1'>
-        {fmtFecha(ts)}
-        {cancha ? ` · ${cancha}` : ''}
-      </div>
+      <div className='text-sm text-gray-500 flex items-center gap-2 flex-wrap'>
+  <span>
+    {fmtFecha(ts)}
+    {cancha ? ` · ${cancha}` : ''}
+  </span>
+
+  {canManage && (
+    <button
+      type='button'
+      onClick={onEditMeta}
+      className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-gray-50'
+      title='Editar fecha y cancha'
+    >
+      Editar
+    </button>
+  )}
+</div>
+
+
 
       {/* Tops (si existen) */}
       {isResult && (tops?.local?.nombre || tops?.visitante?.nombre) && (
@@ -586,6 +602,13 @@ export default function Torneo() {
   /* Confirmar borrar partido (modal) */
   const [openDeleteMatch, setOpenDeleteMatch] = useState(false);
   const [matchToDelete, setMatchToDelete] = useState(null);
+
+  /* Editar fecha/cancha (modal) */
+const [openEditMeta, setOpenEditMeta] = useState(false);
+const [metaMatch, setMetaMatch] = useState(null);
+const [metaFecha, setMetaFecha] = useState('');
+const [metaCancha, setMetaCancha] = useState('');
+
 
   /* Fase final – Modo (mutuamente excluyente) */
   const [modoFase, setModoFase] = useState(null); // 'copas' | 'playoffs' | null
@@ -1093,6 +1116,45 @@ export default function Torneo() {
       alert('No se pudo revertir.');
     }
   };
+
+  /* ---------- Editar fecha/cancha ---------- */
+const openEditarMeta = (match) => {
+  if (!canManage) return;
+  setMetaMatch(match);
+  setMetaFecha(
+    match?.dia?.seconds
+      ? new Date(match.dia.seconds * 1000).toISOString().slice(0,16) // yyyy-MM-ddTHH:mm
+      : ''
+  );
+  setMetaCancha(match?.cancha || '');
+  setOpenEditMeta(true);
+};
+
+const closeEditarMeta = () => {
+  setOpenEditMeta(false);
+  setMetaMatch(null);
+  setMetaFecha('');
+  setMetaCancha('');
+};
+
+const guardarMeta = async (e) => {
+  e.preventDefault();
+  if (!canManage || !metaMatch) return;
+  if (!metaFecha) return alert('Elegí fecha y hora.');
+  if (!metaCancha.trim()) return alert('Ingresá la cancha.');
+  try {
+    await updateDoc(doc(db, 'torneos', id, 'partidos', metaMatch.id), {
+      dia: new Date(metaFecha),
+      cancha: metaCancha.trim(),
+      updatedAt: serverTimestamp(),
+    });
+    closeEditarMeta();
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo actualizar fecha/cancha.');
+  }
+};
+
 
   /* ---------- CRUD Partidos/Equipos ---------- */
   const guardarPartido = async (e) => {
@@ -1853,6 +1915,7 @@ export default function Torneo() {
                       cancha={p.cancha}
                       canManage={canManage}
                       onEditScore={() => openResultado(p)}
+                      onEditMeta={() => openEditarMeta(p)}
                       onDelete={() => solicitarBorrarPartido(p)}
                     />
                   ))}
@@ -2515,6 +2578,7 @@ export default function Torneo() {
                               isResult={p.estado === 'finalizado'}
                               tops={p.tops}
                               onEditScore={() => openResultado(p)}
+                              onEditMeta={() => openEditarMeta(p)}
                               onDelete={() => solicitarBorrarPartido(p)}
                               onRevert={
                                 p.estado === 'finalizado'
@@ -2591,6 +2655,7 @@ export default function Torneo() {
                             isResult={p.estado === 'finalizado'}
                             tops={p.tops}
                             onEditScore={() => openResultado(p)}
+                            onEditMeta={() => openEditarMeta(p)}
                             onDelete={() => solicitarBorrarPartido(p)}
                             onRevert={
                               p.estado === 'finalizado'
@@ -3768,6 +3833,66 @@ export default function Torneo() {
           </div>
         </div>
       )}
+
+      {/* Editar fecha/cancha */}
+{openEditMeta && metaMatch && canManage && (
+  <div
+    className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
+    onClick={closeEditarMeta}
+  >
+    <div
+      className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl'
+      onClick={(e) => e.stopPropagation()}
+    >
+      <h3 className='text-lg font-semibold mb-3'>Editar fecha y cancha</h3>
+      <div className='text-sm text-gray-600 mb-3'>
+        {equiposMap[metaMatch.localId]} vs {equiposMap[metaMatch.visitanteId]}
+      </div>
+
+      <form onSubmit={guardarMeta} className='space-y-3'>
+        <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+          <div>
+            <label className='text-sm'>Fecha & hora</label>
+            <input
+              type='datetime-local'
+              className='mt-1 w-full rounded-xl border px-3 py-2'
+              value={metaFecha}
+              onChange={(e) => setMetaFecha(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className='text-sm'>Cancha</label>
+            <input
+              className='mt-1 w-full rounded-xl border px-3 py-2'
+              placeholder='Ej. Club A'
+              value={metaCancha}
+              onChange={(e) => setMetaCancha(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        <div className='flex items-center justify-end gap-2 pt-2'>
+          <button
+            type='button'
+            onClick={closeEditarMeta}
+            className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
+          >
+            Cancelar
+          </button>
+          <button
+            type='submit'
+            className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
+          >
+            Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
+
 
       {/* Playoffs config (con programación) */}
       {openPOConfig && canManage && (
