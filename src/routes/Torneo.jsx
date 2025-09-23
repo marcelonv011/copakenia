@@ -331,7 +331,6 @@ const perdedorDe = (match, sl, sv) => {
   return sl > sv ? match.visitanteId : match.localId;
 };
 
-
 /* ---------- Button style helpers (global, compacto) ---------- */
 const BTN =
   // móvil: compacto por defecto
@@ -724,134 +723,219 @@ export default function Torneo() {
   });
 
   // --- Helpers para 3.º puesto + Final (modal doble) ---
-function sCanchaPreferida() {
-  const semis = fasePartidos.filter((m) => m.fase === "semi");
-  if (semis.length >= 2) {
-    const c0 = semis[0]?.cancha || "";
-    const c1 = semis[1]?.cancha || "";
-    if (c0 && c1 && c0 === c1) return c0;
-    return c0 || c1 || "A definir";
+  function sCanchaPreferida(faseKey = "semi") {
+    // Toma la cancha más repetida entre los partidos de esa fase (o alguna disponible)
+    const semis = fasePartidos.filter((m) => m.fase === faseKey);
+    if (semis.length >= 2) {
+      const c0 = semis[0]?.cancha || "";
+      const c1 = semis[1]?.cancha || "";
+      if (c0 && c1 && c0 === c1) return c0;
+      return c0 || c1 || "A definir";
+    }
+    return "A definir";
   }
-  return "A definir";
-}
 
-function abrirProgramarDefiniciones({
-  perd0, perd1, gan0, gan1,
-  tercerExistente, finalExistente,
-}) {
-  const porDefectoTercer = toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
-  const porDefectoFinal  = toDatetimeLocalValue(new Date(Date.now() + 3 * 60 * 60 * 1000));
+  function abrirProgramarDefinicionesCustom({
+    labelTercer = "3.º puesto",
+    labelFinal = "Final",
+    faseTercer = "tercer",
+    faseFinal = "final",
+    perd0,
+    perd1,
+    gan0,
+    gan1,
+    tercerExistente,
+    finalExistente,
+  }) {
+    const porDefectoTercer = toDatetimeLocalValue(
+      new Date(Date.now() + 60 * 60 * 1000)
+    );
+    const porDefectoFinal = toDatetimeLocalValue(
+      new Date(Date.now() + 3 * 60 * 1000)
+    );
 
-  setPoDefsForm({
+    setPoDefsForm({
+      labelTercer,
+      labelFinal,
+      faseTercerKey: faseTercer, // NUEVO
+      faseFinalKey: faseFinal, // NUEVO
+      tercer: {
+        matchId: tercerExistente?.id || null,
+        localId: perd0,
+        visitanteId: perd1,
+        fecha: tercerExistente?.dia?.seconds
+          ? toDatetimeLocalValue(new Date(tercerExistente.dia.seconds * 1000))
+          : porDefectoTercer,
+        cancha: tercerExistente?.cancha || sCanchaPreferida(),
+      },
+      final: {
+        matchId: finalExistente?.id || null,
+        localId: gan0,
+        visitanteId: gan1,
+        fecha: finalExistente?.dia?.seconds
+          ? toDatetimeLocalValue(new Date(finalExistente.dia.seconds * 1000))
+          : porDefectoFinal,
+        cancha: finalExistente?.cancha || sCanchaPreferida(),
+      },
+    });
+    setOpenPODefs(true);
+  }
+
+  // Wrapper de compatibilidad: usa la versión "Custom" con defaults genéricos
+  function abrirProgramarDefiniciones({
+    perd0,
+    perd1,
+    gan0,
+    gan1,
+    tercerExistente,
+    finalExistente,
+  }) {
+    abrirProgramarDefinicionesCustom({
+      labelTercer: "3.º puesto",
+      labelFinal: "Final",
+      faseTercer: "tercer",
+      faseFinal: "final",
+      perd0,
+      perd1,
+      gan0,
+      gan1,
+      tercerExistente,
+      finalExistente,
+    });
+  }
+
+  async function guardarDefsProgramacion(e) {
+    e.preventDefault();
+    if (!canManage) return;
+
+    const { tercer, final, faseTercerKey, faseFinalKey } = poDefsForm;
+
+    const writes = [];
+    const mkPayload = (fase, slot, d) => ({
+      localId: d.localId,
+      visitanteId: d.visitanteId,
+      estado: "pendiente",
+      fase, // ← usa la fase que venga
+      poSlot: slot,
+      dia: new Date(d.fecha),
+      cancha: (d.cancha || "").trim(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // 3.º puesto
+    if (tercer.localId && tercer.visitanteId && tercer.fecha && tercer.cancha) {
+      if (tercer.matchId) {
+        writes.push(
+          updateDoc(
+            doc(db, "torneos", id, "partidos", tercer.matchId),
+            mkPayload(faseTercerKey, 0, tercer)
+          )
+        );
+      } else {
+        writes.push(
+          addDoc(collection(db, "torneos", id, "partidos"), {
+            ...mkPayload(faseTercerKey, 0, tercer),
+            createdAt: serverTimestamp(),
+          })
+        );
+      }
+    }
+
+    // Final
+    if (final.localId && final.visitanteId && final.fecha && final.cancha) {
+      if (final.matchId) {
+        writes.push(
+          updateDoc(
+            doc(db, "torneos", id, "partidos", final.matchId),
+            mkPayload(faseFinalKey, 0, final)
+          )
+        );
+      } else {
+        writes.push(
+          addDoc(collection(db, "torneos", id, "partidos"), {
+            ...mkPayload(faseFinalKey, 0, final),
+            createdAt: serverTimestamp(),
+          })
+        );
+      }
+    }
+
+    try {
+      await Promise.all(writes);
+      setOpenPODefs(false);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo programar las definiciones.");
+    }
+  }
+
+  // Modal doble: 3.º puesto + Final (con fases configurables)
+  const [openPODefs, setOpenPODefs] = useState(false);
+  const [poDefsForm, setPoDefsForm] = useState({
     labelTercer: "3.º puesto",
     labelFinal: "Final",
+    // NUEVO: claves de fase a guardar
+    faseTercerKey: "tercer",
+    faseFinalKey: "final",
     tercer: {
-      matchId: tercerExistente?.id || null,
-      localId: perd0,
-      visitanteId: perd1,
-      fecha: tercerExistente?.dia?.seconds
-        ? toDatetimeLocalValue(new Date(tercerExistente.dia.seconds * 1000))
-        : porDefectoTercer,
-      cancha: (tercerExistente?.cancha || sCanchaPreferida()),
+      matchId: null,
+      localId: "",
+      visitanteId: "",
+      fecha: "",
+      cancha: "",
     },
     final: {
-      matchId: finalExistente?.id || null,
-      localId: gan0,
-      visitanteId: gan1,
-      fecha: finalExistente?.dia?.seconds
-        ? toDatetimeLocalValue(new Date(finalExistente.dia.seconds * 1000))
-        : porDefectoFinal,
-      cancha: (finalExistente?.cancha || sCanchaPreferida()),
+      matchId: null,
+      localId: "",
+      visitanteId: "",
+      fecha: "",
+      cancha: "",
     },
   });
-  setOpenPODefs(true);
-}
 
-async function guardarDefsProgramacion(e) {
-  e.preventDefault();
-  if (!canManage) return;
+  // === U13F: modal de sembrado (programar todos los cruces) ===
+  const [openU13Seed, setOpenU13Seed] = useState(false);
+  const [u13Pairs, setU13Pairs] = useState([]);
 
-  const { tercer, final } = poDefsForm;
-
-  const writes = [];
-  const mkPayload = (fase, slot, d) => ({
-    localId: d.localId,
-    visitanteId: d.visitanteId,
-    estado: "pendiente",
-    fase,
-    poSlot: slot,
-    dia: new Date(d.fecha),
-    cancha: (d.cancha || "").trim(),
-    updatedAt: serverTimestamp(),
-  });
-
-  // 3.º puesto
-  if (tercer.localId && tercer.visitanteId && tercer.fecha && tercer.cancha) {
-    if (tercer.matchId) {
-      writes.push(updateDoc(doc(db, "torneos", id, "partidos", tercer.matchId), mkPayload("tercer", 0, tercer)));
-    } else {
-      writes.push(addDoc(collection(db, "torneos", id, "partidos"), { ...mkPayload("tercer", 0, tercer), createdAt: serverTimestamp() }));
-    }
-  }
-
-  // Final
-  if (final.localId && final.visitanteId && final.fecha && final.cancha) {
-    if (final.matchId) {
-      writes.push(updateDoc(doc(db, "torneos", id, "partidos", final.matchId), mkPayload("final", 0, final)));
-    } else {
-      writes.push(addDoc(collection(db, "torneos", id, "partidos"), { ...mkPayload("final", 0, final), createdAt: serverTimestamp() }));
-    }
-  }
-
-  try {
-    await Promise.all(writes);
-    setOpenPODefs(false);
-  } catch (err) {
-    console.error(err);
-    alert("No se pudo programar las definiciones.");
-  }
-}
-
-
-  // Modal doble: 3.º puesto + Final
-const [openPODefs, setOpenPODefs] = useState(false);
-const [poDefsForm, setPoDefsForm] = useState({
-  labelTercer: "3.º puesto",
-  labelFinal: "Final",
-  tercer: { matchId: null, localId: "", visitanteId: "", fecha: "", cancha: "" },
-  final:  { matchId: null, localId: "", visitanteId: "", fecha: "", cancha: "" },
-});
-
+  // === U15F: modal de sembrado (programar todos los cruces) ===
+const [openU15Seed, setOpenU15Seed] = useState(false);
+const [u15Pairs, setU15Pairs] = useState([]); 
 
   // Abrir modal con datos precargados (si ya existe, trae fecha/cancha)
   function abrirProgramarSiguiente({
-  matchId = null,
-  fase,
-  poSlot,
-  localId,
-  visitanteId,
-  fechaExistente,
-  canchaExistente,
-}) {
-  const porDefecto = toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
-  const faseLabel =
-    ({ cuartos: "Cuartos de final", semi: "Semifinal", tercer: "3.º puesto", final: "Final" }[fase]) || fase;
-
-  setPoProgramForm({
-    matchId,
+    matchId = null,
     fase,
-    faseLabel,
     poSlot,
     localId,
     visitanteId,
-    fecha: fechaExistente
-      ? toDatetimeLocalValue(new Date(fechaExistente.seconds * 1000))
-      : porDefecto,
-    cancha: canchaExistente || "",
-  });
-  setOpenPOProgram(true);
-}
+    fechaExistente,
+    canchaExistente,
+  }) {
+    const porDefecto = toDatetimeLocalValue(
+      new Date(Date.now() + 60 * 60 * 1000)
+    );
+    const faseLabel =
+      {
+        cuartos: "Cuartos de final",
+        semi: "Semifinal",
+        tercer: "3.º puesto",
+        final: "Final",
+      }[fase] || fase;
 
+    setPoProgramForm({
+      matchId,
+      fase,
+      faseLabel,
+      poSlot,
+      localId,
+      visitanteId,
+      fecha: fechaExistente
+        ? toDatetimeLocalValue(new Date(fechaExistente.seconds * 1000))
+        : porDefecto,
+      cancha: canchaExistente || "",
+    });
+    setOpenPOProgram(true);
+  }
 
   async function guardarProgramacionSiguiente(e) {
     e.preventDefault();
@@ -1078,15 +1162,281 @@ const [poDefsForm, setPoDefsForm] = useState({
   );
   const hayFaseFinal = !!faseCopas || fasePartidos.length > 0;
 
-  const fasesOrder = ["octavos", "cuartos", "semi", "tercer", "final", "otros"];
-const faseLabels = {
-  octavos: "Octavos",
-  cuartos: "Cuartos",
-  semi: "Semifinales",
-  tercer: "3.º puesto",
-  final: "Final",
-  otros: "Otros",
-};
+  const fasesOrder = [
+    // U13 Femenino
+    "u13b-reclasif", // B4 vs B5 → ganador va a semis PLATA (vs 3A)
+    "oro-semi", // 1A–2B y 1B–2A
+    "plata-semi", // P0: 3A–ganador(B4-B5), P1: 3B–4A
+    "tercer-oro",
+    "final-oro",
+    "tercer-plata",
+    "final-plata",
+
+    // U15 Femenino
+    "u15a-reclasif", // A4 vs A5 → ganador va a semis PLATA (vs 3B)
+
+    // U17 Femenino
+    "u17-cruces", // 1A–3B, 2A–2B, 1B–3A
+    "u17-oro", // Triangular (ganadores)
+    "u17-plata", // Triangular (perdedores)
+
+    // Genéricas por compatibilidad
+    "octavos",
+    "cuartos",
+    "semi",
+    "tercer",
+    "final",
+    "otros",
+  ];
+
+  const faseLabels = {
+    // U13 F
+    "u13b-reclasif": "Reclasificación (Zona B)",
+    "oro-semi": "Semifinales (Oro)",
+    "plata-semi": "Semifinales (Plata)",
+    "tercer-oro": "3.º puesto (Oro)",
+    "final-oro": "Final (Oro)",
+    "tercer-plata": "3.º puesto (Plata)",
+    "final-plata": "Final (Plata)",
+
+    // U15 F
+    "u15a-reclasif": "Reclasificación (Zona A)",
+
+    // U17 F
+    "u17-cruces": "Cruces iniciales (A vs B)",
+    "u17-oro": "Triangular Oro",
+    "u17-plata": "Triangular Plata",
+
+    // Genéricas
+    octavos: "Octavos",
+    cuartos: "Cuartos",
+    semi: "Semifinales",
+    tercer: "3.º puesto",
+    final: "Final",
+    otros: "Otros",
+  };
+
+  // === ARMADO AUTOMÁTICO U13 FEMENINO ===
+  // Se dispara cuando se cierra la reclasificación B (B4 vs B5) o alguna semi.
+  const verSiArmarU13Femenino = async (matchCerrado) => {
+    const fase = String(matchCerrado?.fase || "");
+    const cerr = (m) =>
+      m?.estado === "finalizado" &&
+      Number.isFinite(m?.scoreLocal) &&
+      Number.isFinite(m?.scoreVisitante) &&
+      m.scoreLocal !== m.scoreVisitante;
+
+    // --- RECLASIF B (B4 vs B5) -> crea semi PLATA (slot 0): 3A vs ganador ---
+    if (fase === "u13b-reclasif" && cerr(matchCerrado)) {
+      const topA = (posicionesPorGrupo?.["A"] || []).map((t) => t.id);
+      const A3 = topA[2];
+      if (!A3) return; // aún no se puede (faltan datos para A3)
+
+      const ganadorR1 =
+        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+          ? matchCerrado.localId
+          : matchCerrado.visitanteId;
+
+      // ¿ya existe la semi slot 0? (solo para conservar fecha/cancha si ya estaba)
+      const ya = fasePartidos.find(
+        (m) => m.fase === "plata-semi" && m.poSlot === 0
+      );
+
+      // Payload base
+      const payload = {
+        localId: A3,
+        visitanteId: ganadorR1,
+        estado: "pendiente",
+        fase: "plata-semi",
+        poSlot: 0,
+        dia: ya?.dia?.seconds
+          ? new Date(ya.dia.seconds * 1000)
+          : new Date(Date.now() + 60 * 60 * 1000),
+        cancha: ya?.cancha || "",
+        updatedAt: serverTimestamp(),
+      };
+
+      // Id fijo con prefijo U13 para evitar cualquier choque con U15
+      const semi0Ref = doc(db, "torneos", id, "partidos", "u13-plata-semi-0");
+      await setDoc(
+        semi0Ref,
+        {
+          ...payload,
+          createdAt: ya ? ya.createdAt || serverTimestamp() : serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    // --- Semis ORO -> al cerrar ambas, abrir modal (3.º Oro + Final Oro)
+    if (fase === "oro-semi" && cerr(matchCerrado)) {
+      const merged = fasePartidos.map((m) =>
+        m.id === matchCerrado.id
+          ? {
+              ...m,
+              estado: "finalizado",
+              scoreLocal: matchCerrado.scoreLocal,
+              scoreVisitante: matchCerrado.scoreVisitante,
+            }
+          : m
+      );
+      const semis = merged.filter(
+        (m) => m.fase === "oro-semi" && Number.isFinite(m.poSlot)
+      );
+      const cerrada = (m) =>
+        m.estado === "finalizado" &&
+        Number.isFinite(m.scoreLocal) &&
+        Number.isFinite(m.scoreVisitante) &&
+        m.scoreLocal !== m.scoreVisitante;
+      const done = semis.filter(cerrada);
+
+      if (done.length === 2) {
+        const s0 = done.find((m) => m.poSlot === 0) || done[0];
+        const s1 = done.find((m) => m.poSlot === 1) || done[1];
+
+        const gan0 =
+          s0.scoreLocal > s0.scoreVisitante ? s0.localId : s0.visitanteId;
+        const perd0 =
+          s0.scoreLocal > s0.scoreVisitante ? s0.visitanteId : s0.localId;
+        const gan1 =
+          s1.scoreLocal > s1.scoreVisitante ? s1.localId : s1.visitanteId;
+        const perd1 =
+          s1.scoreLocal > s1.scoreVisitante ? s1.visitanteId : s1.localId;
+
+        const tercerExistente =
+          merged.find((m) => m.fase === "tercer-oro" && m.poSlot === 0) || null;
+        const finalExistente =
+          merged.find((m) => m.fase === "final-oro" && m.poSlot === 0) || null;
+
+        abrirProgramarDefinicionesCustom({
+          labelTercer: "3.º puesto (Oro)",
+          labelFinal: "Final (Oro)",
+          faseTercer: "tercer-oro",
+          faseFinal: "final-oro",
+          perd0,
+          perd1,
+          gan0,
+          gan1,
+          tercerExistente,
+          finalExistente,
+        });
+      }
+    }
+
+    // --- Semis PLATA -> al cerrar ambas, abrir modal (3.º Plata + Final Plata)
+    if (fase === "plata-semi" && cerr(matchCerrado)) {
+      const merged = fasePartidos.map((m) =>
+        m.id === matchCerrado.id
+          ? {
+              ...m,
+              estado: "finalizado",
+              scoreLocal: matchCerrado.scoreLocal,
+              scoreVisitante: matchCerrado.scoreVisitante,
+            }
+          : m
+      );
+      const semis = merged.filter(
+        (m) => m.fase === "plata-semi" && Number.isFinite(m.poSlot)
+      );
+      const cerrada = (m) =>
+        m.estado === "finalizado" &&
+        Number.isFinite(m.scoreLocal) &&
+        Number.isFinite(m.scoreVisitante) &&
+        m.scoreLocal !== m.scoreVisitante;
+      const done = semis.filter(cerrada);
+
+      if (done.length === 2) {
+        const s0 = done.find((m) => m.poSlot === 0) || done[0];
+        const s1 = done.find((m) => m.poSlot === 1) || done[1];
+
+        const gan0 =
+          s0.scoreLocal > s0.scoreVisitante ? s0.localId : s0.visitanteId;
+        const perd0 =
+          s0.scoreLocal > s0.scoreVisitante ? s0.visitanteId : s0.localId;
+        const gan1 =
+          s1.scoreLocal > s1.scoreVisitante ? s1.localId : s1.visitanteId;
+        const perd1 =
+          s1.scoreLocal > s1.scoreVisitante ? s1.visitanteId : s1.localId;
+
+        const tercerExistente =
+          merged.find((m) => m.fase === "tercer-plata" && m.poSlot === 0) ||
+          null;
+        const finalExistente =
+          merged.find((m) => m.fase === "final-plata" && m.poSlot === 0) ||
+          null;
+
+        abrirProgramarDefinicionesCustom({
+          labelTercer: "3.º puesto (Plata)",
+          labelFinal: "Final (Plata)",
+          faseTercer: "tercer-plata",
+          faseFinal: "final-plata",
+          perd0,
+          perd1,
+          gan0,
+          gan1,
+          tercerExistente,
+          finalExistente,
+        });
+      }
+    }
+  };
+
+  // === ARMADO AUTOMÁTICO U15 FEMENINO ===
+  // RECLASIF A (A4 vs A5) -> crea semi PLATA (slot 0): 3B vs ganador
+  const verSiArmarU15Femenino = async (matchCerrado) => {
+    const fase = String(matchCerrado?.fase || "");
+    const cerr = (m) =>
+      m?.estado === "finalizado" &&
+      Number.isFinite(m?.scoreLocal) &&
+      Number.isFinite(m?.scoreVisitante) &&
+      m.scoreLocal !== m.scoreVisitante;
+
+    if (fase === "u15a-reclasif" && cerr(matchCerrado)) {
+      const topB = (posicionesPorGrupo?.["B"] || []).map((t) => t.id);
+      const B3 = topB[2];
+      if (!B3) return;
+
+      const ganadorR1A =
+        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+          ? matchCerrado.localId
+          : matchCerrado.visitanteId;
+
+      // ¿ya existe la semi slot 0? (solo para conservar fecha/cancha si ya estaba)
+      const ya = fasePartidos.find(
+        (m) => m.fase === "plata-semi" && m.poSlot === 0
+      );
+
+      const payload = {
+        localId: B3,
+        visitanteId: ganadorR1A,
+        estado: "pendiente",
+        fase: "plata-semi",
+        poSlot: 0,
+        dia: ya?.dia?.seconds
+          ? new Date(ya.dia.seconds * 1000)
+          : new Date(Date.now() + 60 * 60 * 1000),
+        cancha: ya?.cancha || "",
+        updatedAt: serverTimestamp(),
+      };
+
+      // Id fijo con prefijo U15 → operación idempotente (evita duplicados)
+      const semi0Ref = doc(db, "torneos", id, "partidos", "u15-plata-semi-0");
+      await setDoc(
+        semi0Ref,
+        {
+          ...payload,
+          createdAt: ya ? ya.createdAt || serverTimestamp() : serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  };
+
+  // === ARMADO AUTOMÁTICO U17 FEMENINO (stub) ===
+  // TODO: Implementar cruces → triangulares (Oro/Plata) si corresponde
+  const verSiArmarU17Femenino = async (_matchCerrado) => {
+    // Por ahora no hace nada; evita ReferenceError del saveResultado
+    return;
+  };
 
   const faseGrouped = useMemo(() => {
     const map = {};
@@ -1175,83 +1525,86 @@ const faseLabels = {
     setSaving(false);
   };
 
-/** Avanza automáticamente y, cuando se cierran las dos semis,
- *  abre UN SOLO modal con 3.º puesto (ARRIBA) y FINAL (ABAJO). */
-async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
-  if (!canManage) return;
-  if (!isPO(match?.fase)) return;
-  if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) return;
+  /** Avanza automáticamente y, cuando se cierran las dos semis,
+   *  abre UN SOLO modal con 3.º puesto (ARRIBA) y FINAL (ABAJO). */
+  async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
+    if (!canManage) return;
+    if (!isPO(match?.fase)) return;
+    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) return;
 
-  // Sólo nos interesa el caso "semi" para disparar el modal doble.
-  if (match.fase !== "semi") return;
+    // Sólo nos interesa el caso "semi" para disparar el modal doble.
+    if (match.fase !== "semi") return;
 
-  // 🔧 FUSIÓN LOCAL: tomamos fasePartidos actual y "inyectamos" el resultado recién guardado
-  const fasePartidosMerged = fasePartidos.map((m) =>
-    m.id === match.id
-      ? {
-          ...m,
-          estado: "finalizado",
-          scoreLocal: sl,
-          scoreVisitante: sv,
-        }
-      : m
-  );
+    // 🔧 FUSIÓN LOCAL: tomamos fasePartidos actual y "inyectamos" el resultado recién guardado
+    const fasePartidosMerged = fasePartidos.map((m) =>
+      m.id === match.id
+        ? {
+            ...m,
+            estado: "finalizado",
+            scoreLocal: sl,
+            scoreVisitante: sv,
+          }
+        : m
+    );
 
-  // ¿Tenemos las dos semifinales con slot?
-  const semis = fasePartidosMerged
-    .filter((m) => m.fase === "semi")
-    .filter((m) => Number.isFinite(m.poSlot));
+    // ¿Tenemos las dos semifinales con slot?
+    const semis = fasePartidosMerged
+      .filter((m) => m.fase === "semi")
+      .filter((m) => Number.isFinite(m.poSlot));
 
-  // Cerradas (finalizado y con scores válidos)
-  const semisCerradas = semis.filter(
-    (m) =>
-      m.estado === "finalizado" &&
-      Number.isFinite(m.scoreLocal) &&
-      Number.isFinite(m.scoreVisitante)
-  );
+    // Cerradas (finalizado y con scores válidos)
+    const semisCerradas = semis.filter(
+      (m) =>
+        m.estado === "finalizado" &&
+        Number.isFinite(m.scoreLocal) &&
+        Number.isFinite(m.scoreVisitante)
+    );
 
-  if (semisCerradas.length !== 2) return;
+    if (semisCerradas.length !== 2) return;
 
-  const s0 = semisCerradas.find((m) => m.poSlot === 0) || semisCerradas[0];
-  const s1 = semisCerradas.find((m) => m.poSlot === 1) || semisCerradas[1];
+    const s0 = semisCerradas.find((m) => m.poSlot === 0) || semisCerradas[0];
+    const s1 = semisCerradas.find((m) => m.poSlot === 1) || semisCerradas[1];
 
-  const gan0 = ganadorDe(s0, s0.scoreLocal, s0.scoreVisitante);
-  const gan1 = ganadorDe(s1, s1.scoreLocal, s1.scoreVisitante);
-  const perd0 = perdedorDe(s0, s0.scoreLocal, s0.scoreVisitante);
-  const perd1 = perdedorDe(s1, s1.scoreLocal, s1.scoreVisitante);
+    const gan0 = ganadorDe(s0, s0.scoreLocal, s0.scoreVisitante);
+    const gan1 = ganadorDe(s1, s1.scoreLocal, s1.scoreVisitante);
+    const perd0 = perdedorDe(s0, s0.scoreLocal, s0.scoreVisitante);
+    const perd1 = perdedorDe(s1, s1.scoreLocal, s1.scoreVisitante);
 
-  if (!gan0 || !gan1 || !perd0 || !perd1) return;
+    if (!gan0 || !gan1 || !perd0 || !perd1) return;
 
-  // ¿Ya existen placeholders de 3.º y final?
-  const tercerExistente =
-    fasePartidosMerged.find((m) => m.fase === "tercer" && m.poSlot === 0) ||
-    null;
-  const finalExistente =
-    fasePartidosMerged.find((m) => m.fase === "final" && m.poSlot === 0) ||
-    null;
+    // ¿Ya existen placeholders de 3.º y final?
+    const tercerExistente =
+      fasePartidosMerged.find((m) => m.fase === "tercer" && m.poSlot === 0) ||
+      null;
+    const finalExistente =
+      fasePartidosMerged.find((m) => m.fase === "final" && m.poSlot === 0) ||
+      null;
 
-  abrirProgramarDefiniciones({
-    perd0,
-    perd1,
-    gan0,
-    gan1,
-    tercerExistente,
-    finalExistente,
-  });
-}
-
-
-
+    abrirProgramarDefiniciones({
+      perd0,
+      perd1,
+      gan0,
+      gan1,
+      tercerExistente,
+      finalExistente,
+    });
+  }
 
   const saveResultado = async (e) => {
     e.preventDefault();
     if (!canManage || !editingMatch) return;
-    const sl = Number(scoreLocal),
-      sv = Number(scoreVisitante);
-    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0)
-      return alert("Cargá puntajes válidos.");
-    if (sl === sv) return alert("No se permiten empates.");
 
+    // 1) Leer + validar marcadores
+    const sl = Number(scoreLocal);
+    const sv = Number(scoreVisitante);
+    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0) {
+      return alert("Cargá puntajes válidos.");
+    }
+    if (sl === sv) {
+      return alert("No se permiten empates.");
+    }
+
+    // 2) Validar máximos anotadores (tops)
     const lPts = topLocalPts === "" ? null : Number(topLocalPts);
     const vPts = topVisPts === "" ? null : Number(topVisPts);
     if (
@@ -1274,6 +1627,8 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
 
     try {
       setSaving(true);
+
+      // 3) Persistir resultado
       await updateDoc(doc(db, "torneos", id, "partidos", editingMatch.id), {
         scoreLocal: sl,
         scoreVisitante: sv,
@@ -1282,9 +1637,25 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
         updatedAt: serverTimestamp(),
       });
 
-      // Avanzar cuadro si corresponde
-      await avanzarPlayoffsSiCorresponde(editingMatch, sl, sv);
+      // 4) Avances automáticos (no bloquear si algo falla)
+      try {
+        const matchFinalizado = {
+          ...editingMatch,
+          estado: "finalizado",
+          scoreLocal: sl,
+          scoreVisitante: sv,
+        };
 
+        await avanzarPlayoffsSiCorresponde(matchFinalizado, sl, sv);
+        await verSiArmarU13Femenino(matchFinalizado);
+        await verSiArmarU15Femenino(matchFinalizado);
+        await verSiArmarU17Femenino(matchFinalizado);
+      } catch (advErr) {
+        console.warn("Avance automático falló:", advErr);
+        // No hacemos alert para no cortar el flujo de guardado
+      }
+
+      // 5) Cerrar modal
       closeResultado();
     } catch (err) {
       console.error(err);
@@ -1806,6 +2177,385 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
     }
   };
 
+  async function sembrarU13Femenino() {
+    if (!canManage) return;
+    if (modoFase !== "playoffs") {
+      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U13F.");
+      return;
+    }
+
+    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+
+    if (topA.length < 4 || topB.length < 5) {
+      alert(
+        "Faltan posiciones: U13F requiere al menos A(1..4) y B(1..5) para sembrar."
+      );
+      return;
+    }
+
+    const A1 = topA[0],
+      A2 = topA[1],
+      A3 = topA[2],
+      A4 = topA[3];
+    const B1 = topB[0],
+      B2 = topB[1],
+      B3 = topB[2],
+      B4 = topB[3],
+      B5 = topB[4];
+
+    const aBorrar = fasePartidos.filter((m) =>
+      [
+        "u13b-reclasif",
+        "oro-semi",
+        "plata-semi",
+        "tercer-oro",
+        "final-oro",
+        "tercer-plata",
+        "final-plata",
+      ].includes(String(m.fase || ""))
+    );
+    await Promise.all(
+      aBorrar.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+    );
+
+    const base = Date.now() + 60 * 60 * 1000;
+    let tick = 0;
+    const nextDate = () => new Date(base + ++tick * 60 * 60 * 1000);
+
+    const writes = [];
+
+    // Reclasificación (Zona B): B4 vs B5
+    writes.push(
+      addDoc(collection(db, "torneos", id, "partidos"), {
+        localId: B4,
+        visitanteId: B5,
+        estado: "pendiente",
+        fase: "u13b-reclasif",
+        poSlot: 0,
+        dia: nextDate(),
+        cancha: "",
+        createdAt: serverTimestamp(),
+      })
+    );
+
+    // Semifinales ORO (1A–2B y 1B–2A)
+    writes.push(
+      addDoc(collection(db, "torneos", id, "partidos"), {
+        localId: A1,
+        visitanteId: B2,
+        estado: "pendiente",
+        fase: "oro-semi",
+        poSlot: 0,
+        dia: nextDate(),
+        cancha: "",
+        createdAt: serverTimestamp(),
+      })
+    );
+    writes.push(
+      addDoc(collection(db, "torneos", id, "partidos"), {
+        localId: B1,
+        visitanteId: A2,
+        estado: "pendiente",
+        fase: "oro-semi",
+        poSlot: 1,
+        dia: nextDate(),
+        cancha: "",
+        createdAt: serverTimestamp(),
+      })
+    );
+
+    // Semifinales PLATA: poSlot 1 (3B–4A) ahora
+    writes.push(
+      addDoc(collection(db, "torneos", id, "partidos"), {
+        localId: B3,
+        visitanteId: A4,
+        estado: "pendiente",
+        fase: "plata-semi",
+        poSlot: 1,
+        dia: nextDate(),
+        cancha: "",
+        createdAt: serverTimestamp(),
+      })
+    );
+    // poSlot 0 (3A vs ganador B4–B5) lo arma después verSiArmarU13Femenino() al cerrar la reclasif
+
+    try {
+      await Promise.all(writes);
+      alert(
+        "U13F sembrado. Cargá el resultado de B4–B5: se arma la otra semi PLATA (3A vs ganador)."
+      );
+      setTab("fase");
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo sembrar U13F.");
+    }
+  }
+
+  // Abre el modal prearmando los 5 partidos de U13F para que les pongas cancha/horarios
+  function abrirSembrarU13UIModal() {
+    if (!canManage) return;
+    if (modoFase !== "playoffs") {
+      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U13F.");
+      return;
+    }
+
+    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+    if (topA.length < 4 || topB.length < 5) {
+      alert("Faltan posiciones: U13F requiere al menos A(1..4) y B(1..5).");
+      return;
+    }
+
+    const [A1, A2, A3, A4] = topA;
+    const [B1, B2, B3, B4, B5] = topB;
+
+    const base = Date.now() + 60 * 60 * 1000;
+    const dt = (h) => toDatetimeLocalValue(new Date(base + h * 60 * 60 * 1000));
+
+    const pairs = [
+      {
+        label: "Reclasificación (B4 vs B5)",
+        fase: "u13b-reclasif",
+        poSlot: 0,
+        localId: B4,
+        visitanteId: B5,
+        fecha: dt(0),
+        cancha: "",
+      },
+      {
+        label: "Semi Oro 1 (1A vs 2B)",
+        fase: "oro-semi",
+        poSlot: 0,
+        localId: A1,
+        visitanteId: B2,
+        fecha: dt(1),
+        cancha: "",
+      },
+      {
+        label: "Semi Oro 2 (1B vs 2A)",
+        fase: "oro-semi",
+        poSlot: 1,
+        localId: B1,
+        visitanteId: A2,
+        fecha: dt(2),
+        cancha: "",
+      },
+      {
+        label: "Semi Plata 2 (3B vs 4A)",
+        fase: "plata-semi",
+        poSlot: 1,
+        localId: B3,
+        visitanteId: A4,
+        fecha: dt(3),
+        cancha: "",
+      },
+      // Placeholder: 3A vs ganador(B4–B5). Se guarda con id fijo y luego tu lógica lo completa
+      {
+        label: "Semi Plata 1 (3A vs ganador B4–B5)",
+        fase: "plata-semi",
+        poSlot: 0,
+        localId: A3,
+        visitanteId: null,
+        fecha: dt(4),
+        cancha: "",
+        fixedId: "u13-plata-semi-0",
+      },
+    ];
+
+    setU13Pairs(pairs);
+    setOpenU13Seed(true);
+  }
+
+  function abrirSembrarU15UIModal() {
+  if (!canManage) return;
+  if (modoFase !== "playoffs") {
+    alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U15F.");
+    return;
+  }
+
+  const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
+  const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+
+  // Necesitamos A(1..5) y B(1..4)
+  if (topA.length < 5 || topB.length < 4) {
+    alert("Faltan posiciones: U15F requiere al menos A(1..5) y B(1..4).");
+    return;
+  }
+
+  const [A1, A2, A3, A4, A5] = topA;
+  const [B1, B2, B3, B4] = topB;
+
+  const base = Date.now() + 60 * 60 * 1000;
+  const dt = (h) => toDatetimeLocalValue(new Date(base + h * 60 * 60 * 1000));
+
+  const pairs = [
+    // Play-in/reclasificación: A4 vs A5
+    {
+      label: "Reclasificación (A4 vs A5)",
+      fase: "u15a-reclasif",
+      poSlot: 0,
+      localId: A4,
+      visitanteId: A5,
+      fecha: dt(0),
+      cancha: "",
+    },
+
+    // Semifinales ORO (igual que U13): 1A–2B y 1B–2A
+    {
+      label: "Semi Oro 1 (1A vs 2B)",
+      fase: "oro-semi",
+      poSlot: 0,
+      localId: A1,
+      visitanteId: B2,
+      fecha: dt(1),
+      cancha: "",
+    },
+    {
+      label: "Semi Oro 2 (1B vs 2A)",
+      fase: "oro-semi",
+      poSlot: 1,
+      localId: B1,
+      visitanteId: A2,
+      fecha: dt(2),
+      cancha: "",
+    },
+
+    // Semifinales PLATA:
+    // slot 1 queda fijo: 3A vs 4B
+    {
+      label: "Semi Plata 2 (3A vs 4B)",
+      fase: "plata-semi",
+      poSlot: 1,
+      localId: A3,
+      visitanteId: B4,
+      fecha: dt(3),
+      cancha: "",
+    },
+
+    // slot 0 es el especial: 3B vs GANADOR(A4–A5), con id fijo para que se complete solo
+    {
+      label: "Semi Plata 1 (3B vs ganador A4–A5)",
+      fase: "plata-semi",
+      poSlot: 0,
+      localId: B3,
+      visitanteId: null,           // se completa luego
+      fecha: dt(4),
+      cancha: "",
+      fixedId: "u15-plata-semi-0", // coincide con verSiArmarU15Femenino
+    },
+  ];
+
+  setU15Pairs(pairs);
+  setOpenU15Seed(true);
+}
+
+
+  // Guarda los partidos que completaste en el modal
+  async function guardarSembradoU13(e) {
+    e.preventDefault();
+    if (!canManage) return;
+
+    // evitar duplicados: borro mismo (fase,slot) si ya existe
+    const keys = new Set(u13Pairs.map((p) => `${p.fase}::${p.poSlot}`));
+    const existentes = fasePartidos.filter((m) =>
+      keys.has(`${m.fase}::${m.poSlot}`)
+    );
+    await Promise.all(
+      existentes.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+    );
+
+    const writes = [];
+    for (const p of u13Pairs) {
+      if (!p.fecha) return alert(`Completá fecha/hora en: ${p.label}`);
+      if (!p.cancha?.trim()) return alert(`Completá cancha en: ${p.label}`);
+
+      const payload = {
+        localId: p.localId,
+        ...(p.visitanteId ? { visitanteId: p.visitanteId } : {}), // semi de 3A espera ganador
+        estado: "pendiente",
+        fase: p.fase,
+        poSlot: p.poSlot,
+        dia: new Date(p.fecha),
+        cancha: p.cancha.trim(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (p.fixedId) {
+        // placeholder con id fijo para que luego verSiArmarU13Femenino complete el rival manteniendo fecha/cancha
+        writes.push(
+          setDoc(doc(db, "torneos", id, "partidos", p.fixedId), payload, {
+            merge: true,
+          })
+        );
+      } else {
+        writes.push(addDoc(collection(db, "torneos", id, "partidos"), payload));
+      }
+    }
+
+    try {
+      await Promise.all(writes);
+      setOpenU13Seed(false);
+      setTab("fase");
+    } catch (err) {
+      console.error(err);
+      alert("No se pudieron crear los cruces U13F.");
+    }
+  }
+
+  async function guardarSembradoU15(e) {
+  e.preventDefault();
+  if (!canManage) return;
+
+  // evitar duplicados: borro mismo (fase,slot) si ya existe
+  const keys = new Set(u15Pairs.map((p) => `${p.fase}::${p.poSlot}`));
+  const existentes = fasePartidos.filter((m) =>
+    keys.has(`${m.fase}::${m.poSlot}`)
+  );
+  await Promise.all(
+    existentes.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+  );
+
+  const writes = [];
+  for (const p of u15Pairs) {
+    if (!p.fecha) return alert(`Completá fecha/hora en: ${p.label}`);
+    if (!p.cancha?.trim()) return alert(`Completá cancha en: ${p.label}`);
+
+    const payload = {
+      localId: p.localId,
+      ...(p.visitanteId ? { visitanteId: p.visitanteId } : {}), // el placeholder espera ganador
+      estado: "pendiente",
+      fase: p.fase,
+      poSlot: p.poSlot,
+      dia: new Date(p.fecha),
+      cancha: p.cancha.trim(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    if (p.fixedId) {
+      writes.push(
+        setDoc(doc(db, "torneos", id, "partidos", p.fixedId), payload, {
+          merge: true,
+        })
+      );
+    } else {
+      writes.push(addDoc(collection(db, "torneos", id, "partidos"), payload));
+    }
+  }
+
+  try {
+    await Promise.all(writes);
+    setOpenU15Seed(false);
+    setTab("fase");
+  } catch (err) {
+    console.error(err);
+    alert("No se pudieron crear los cruces U15F.");
+  }
+}
+
+
   const borrarCrucesFaseFinal = async () => {
     if (!canManage) return;
     if (modoFase !== "playoffs") return alert("El modo activo es Copas.");
@@ -1886,14 +2636,16 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
   };
 
   /* -------------------- RENDER -------------------- */
+  const showFaseTab = Boolean(admin || hayFaseFinal || modoFase);
+
   const tabs = [
     "fixture",
     "resultados",
     "posiciones",
-    ...(hayCopasEnJuego ? ["pos-copas"] : []), // << NUEVO
+    ...(hayCopasEnJuego ? ["pos-copas"] : []),
     "goleadores",
     "equipos",
-    ...(admin || hayFaseFinal ? ["fase"] : []),
+    ...(showFaseTab ? ["fase"] : []),
   ];
 
   const irAPosCopas = () => {
@@ -2824,30 +3576,51 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
           {/* Panel PLAYOFFS */}
           {modoFase === "playoffs" && (
             <div className="rounded-2xl bg-white p-4 shadow-sm border">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-lg">Playoffs</h3>
-                  <p className="text-sm text-gray-600">
-                    Elegí cuántos entran (2, 4, 8, 16), programá hora/cancha y
-                    se arman cruces por siembra.
-                  </p>
+                  {canManage && (
+                    <p className="text-sm text-gray-600">
+                      Elegí cuántos entran (2, 4, 8, 16), programá hora/cancha y
+                      se arman cruces por siembra.
+                    </p>
+                  )}
                 </div>
+
                 {canManage && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={abrirPOConfig}
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
-                    >
-                      <IconPlus /> Generar
-                    </button>
-                    {fasePartidos.length > 0 && (
+                  <div className="w-full sm:w-auto">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                       <button
-                        onClick={borrarCrucesFaseFinal}
-                        className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                        onClick={abrirPOConfig}
+                        className={`${BTN} ${BTN_PRIMARY} ${BTN_FULL} from-indigo-600 to-purple-600`}
                       >
-                        Borrar cruces
+                        <IconPlus /> Generar
                       </button>
-                    )}
+
+                      <button
+                        onClick={abrirSembrarU13UIModal}
+                        className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+                      >
+                        Sembrar U13F
+                      </button>
+
+                      <button
+  onClick={abrirSembrarU15UIModal}
+  className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+>
+  Sembrar U15F
+</button>
+
+
+                      {fasePartidos.length > 0 && (
+                        <button
+                          onClick={borrarCrucesFaseFinal}
+                          className={`${BTN} ${BTN_MUTED} ${BTN_FULL}`}
+                        >
+                          Borrar cruces
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -3033,124 +3806,154 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
       )}
 
       {openPODefs && canManage && (
-  <div
-    className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
-    onClick={() => setOpenPODefs(false)}
-  >
-    <div
-      className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <h3 className="text-lg font-semibold mb-1">Programar definiciones</h3>
-      <p className="text-sm text-gray-600 mb-3">
-        Primero 3.º puesto (arriba) y luego la Final (abajo).
-      </p>
-
-      <form onSubmit={guardarDefsProgramacion} className="space-y-5">
-        {/* 3.º PUESTO */}
-        <div className="rounded-xl border p-4">
-          <div className="font-medium mb-2">{poDefsForm.labelTercer}</div>
-          <div className="text-sm text-gray-600 mb-2">
-            <EquipoTag
-              nombre={equiposMap[poDefsForm.tercer.localId] || "Local"}
-              logoUrl={equipos.find((e) => e.id === poDefsForm.tercer.localId)?.logoUrl}
-            />{" "}
-            vs{" "}
-            <EquipoTag
-              nombre={equiposMap[poDefsForm.tercer.visitanteId] || "Visitante"}
-              logoUrl={equipos.find((e) => e.id === poDefsForm.tercer.visitanteId)?.logoUrl}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm">Fecha & hora</label>
-              <input
-                type="datetime-local"
-                className="mt-1 w-full rounded-xl border px-3 py-2"
-                value={poDefsForm.tercer.fecha}
-                onChange={(e) =>
-                  setPoDefsForm((f) => ({ ...f, tercer: { ...f.tercer, fecha: e.target.value } }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm">Cancha</label>
-              <input
-                className="mt-1 w-full rounded-xl border px-3 py-2"
-                value={poDefsForm.tercer.cancha}
-                onChange={(e) =>
-                  setPoDefsForm((f) => ({ ...f, tercer: { ...f.tercer, cancha: e.target.value } }))
-                }
-                placeholder="Ej. Club A"
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* FINAL */}
-        <div className="rounded-xl border p-4">
-          <div className="font-medium mb-2">{poDefsForm.labelFinal}</div>
-          <div className="text-sm text-gray-600 mb-2">
-            <EquipoTag
-              nombre={equiposMap[poDefsForm.final.localId] || "Local"}
-              logoUrl={equipos.find((e) => e.id === poDefsForm.final.localId)?.logoUrl}
-            />{" "}
-            vs{" "}
-            <EquipoTag
-              nombre={equiposMap[poDefsForm.final.visitanteId] || "Visitante"}
-              logoUrl={equipos.find((e) => e.id === poDefsForm.final.visitanteId)?.logoUrl}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm">Fecha & hora</label>
-              <input
-                type="datetime-local"
-                className="mt-1 w-full rounded-xl border px-3 py-2"
-                value={poDefsForm.final.fecha}
-                onChange={(e) =>
-                  setPoDefsForm((f) => ({ ...f, final: { ...f.final, fecha: e.target.value } }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm">Cancha</label>
-              <input
-                className="mt-1 w-full rounded-xl border px-3 py-2"
-                value={poDefsForm.final.cancha}
-                onChange={(e) =>
-                  setPoDefsForm((f) => ({ ...f, final: { ...f.final, cancha: e.target.value } }))
-                }
-                placeholder="Ej. Club A"
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setOpenPODefs(false)}
-            className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          onClick={() => setOpenPODefs(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
           >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
-          >
-            Guardar ambas
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-)}
+            <h3 className="text-lg font-semibold mb-1">
+              Programar definiciones
+            </h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Primero 3.º puesto (arriba) y luego la Final (abajo).
+            </p>
 
+            <form onSubmit={guardarDefsProgramacion} className="space-y-5">
+              {/* 3.º PUESTO */}
+              <div className="rounded-xl border p-4">
+                <div className="font-medium mb-2">{poDefsForm.labelTercer}</div>
+                <div className="text-sm text-gray-600 mb-2">
+                  <EquipoTag
+                    nombre={equiposMap[poDefsForm.tercer.localId] || "Local"}
+                    logoUrl={
+                      equipos.find((e) => e.id === poDefsForm.tercer.localId)
+                        ?.logoUrl
+                    }
+                  />{" "}
+                  vs{" "}
+                  <EquipoTag
+                    nombre={
+                      equiposMap[poDefsForm.tercer.visitanteId] || "Visitante"
+                    }
+                    logoUrl={
+                      equipos.find(
+                        (e) => e.id === poDefsForm.tercer.visitanteId
+                      )?.logoUrl
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm">Fecha & hora</label>
+                    <input
+                      type="datetime-local"
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={poDefsForm.tercer.fecha}
+                      onChange={(e) =>
+                        setPoDefsForm((f) => ({
+                          ...f,
+                          tercer: { ...f.tercer, fecha: e.target.value },
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm">Cancha</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={poDefsForm.tercer.cancha}
+                      onChange={(e) =>
+                        setPoDefsForm((f) => ({
+                          ...f,
+                          tercer: { ...f.tercer, cancha: e.target.value },
+                        }))
+                      }
+                      placeholder="Ej. Club A"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* FINAL */}
+              <div className="rounded-xl border p-4">
+                <div className="font-medium mb-2">{poDefsForm.labelFinal}</div>
+                <div className="text-sm text-gray-600 mb-2">
+                  <EquipoTag
+                    nombre={equiposMap[poDefsForm.final.localId] || "Local"}
+                    logoUrl={
+                      equipos.find((e) => e.id === poDefsForm.final.localId)
+                        ?.logoUrl
+                    }
+                  />{" "}
+                  vs{" "}
+                  <EquipoTag
+                    nombre={
+                      equiposMap[poDefsForm.final.visitanteId] || "Visitante"
+                    }
+                    logoUrl={
+                      equipos.find((e) => e.id === poDefsForm.final.visitanteId)
+                        ?.logoUrl
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm">Fecha & hora</label>
+                    <input
+                      type="datetime-local"
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={poDefsForm.final.fecha}
+                      onChange={(e) =>
+                        setPoDefsForm((f) => ({
+                          ...f,
+                          final: { ...f.final, fecha: e.target.value },
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm">Cancha</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={poDefsForm.final.cancha}
+                      onChange={(e) =>
+                        setPoDefsForm((f) => ({
+                          ...f,
+                          final: { ...f.final, cancha: e.target.value },
+                        }))
+                      }
+                      placeholder="Ej. Club A"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenPODefs(false)}
+                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                >
+                  Guardar ambas
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Programar siguiente cruce (Playoffs) */}
       {openPOProgram && canManage && (
@@ -3232,6 +4035,197 @@ async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
           </div>
         </div>
       )}
+
+      {openU13Seed && canManage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          onClick={() => setOpenU13Seed(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-1">Sembrar U13F</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Definí día/hora y cancha para reclasificación y semifinales.
+            </p>
+
+            <form onSubmit={guardarSembradoU13} className="space-y-4">
+              {u13Pairs.map((p, idx) => (
+                <div key={idx} className="rounded-xl border p-3">
+                  <div className="font-medium mb-1">{p.label}</div>
+                  <div className="text-xs text-gray-600 mb-2">
+                    <EquipoTag
+                      nombre={equiposMap[p.localId] || "Local"}
+                      logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
+                    />{" "}
+                    vs{" "}
+                    {p.visitanteId ? (
+                      <EquipoTag
+                        nombre={equiposMap[p.visitanteId] || "Visitante"}
+                        logoUrl={
+                          equipos.find((e) => e.id === p.visitanteId)?.logoUrl
+                        }
+                      />
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                        Ganador B4–B5
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm">Fecha & hora</label>
+                      <input
+                        type="datetime-local"
+                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        value={p.fecha}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setU13Pairs((arr) =>
+                            arr.map((x, i) =>
+                              i === idx ? { ...x, fecha: v } : x
+                            )
+                          );
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm">Cancha</label>
+                      <input
+                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        placeholder="Ej. Club A"
+                        value={p.cancha}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setU13Pairs((arr) =>
+                            arr.map((x, i) =>
+                              i === idx ? { ...x, cancha: v } : x
+                            )
+                          );
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenU13Seed(false)}
+                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                >
+                  Crear cruces
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {openU15Seed && canManage && (
+  <div
+    className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+    onClick={() => setOpenU15Seed(false)}
+  >
+    <div
+      className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <h3 className="text-lg font-semibold mb-1">Sembrar U15F</h3>
+      <p className="text-sm text-gray-600 mb-3">
+        Definí día/hora y cancha para reclasificación y semifinales.
+      </p>
+
+      <form onSubmit={guardarSembradoU15} className="space-y-4">
+        {u15Pairs.map((p, idx) => (
+          <div key={idx} className="rounded-xl border p-3">
+            <div className="font-medium mb-1">{p.label}</div>
+            <div className="text-xs text-gray-600 mb-2">
+              <EquipoTag
+                nombre={equiposMap[p.localId] || "Local"}
+                logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
+              />{" "}
+              vs{" "}
+              {p.visitanteId ? (
+                <EquipoTag
+                  nombre={equiposMap[p.visitanteId] || "Visitante"}
+                  logoUrl={
+                    equipos.find((e) => e.id === p.visitanteId)?.logoUrl
+                  }
+                />
+              ) : (
+                <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                  Ganador A4–A5
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm">Fecha & hora</label>
+                <input
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={p.fecha}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setU15Pairs((arr) =>
+                      arr.map((x, i) => (i === idx ? { ...x, fecha: v } : x))
+                    );
+                  }}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm">Cancha</label>
+                <input
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  placeholder="Ej. Club A"
+                  value={p.cancha}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setU15Pairs((arr) =>
+                      arr.map((x, i) => (i === idx ? { ...x, cancha: v } : x))
+                    );
+                  }}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setOpenU15Seed(false)}
+            className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+          >
+            Crear cruces
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
+
 
       {/* Nuevo partido */}
       {openMatch && canManage && (
