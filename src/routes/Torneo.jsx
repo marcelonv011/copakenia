@@ -898,8 +898,12 @@ export default function Torneo() {
   const [u13Pairs, setU13Pairs] = useState([]);
 
   // === U15F: modal de sembrado (programar todos los cruces) ===
-const [openU15Seed, setOpenU15Seed] = useState(false);
-const [u15Pairs, setU15Pairs] = useState([]); 
+  const [openU15Seed, setOpenU15Seed] = useState(false);
+  const [u15Pairs, setU15Pairs] = useState([]);
+
+  // === U17F: modal de sembrado (programar los 3 cruces iniciales) ===
+  const [openU17Seed, setOpenU17Seed] = useState(false);
+  const [u17Pairs, setU17Pairs] = useState([]);
 
   // Abrir modal con datos precargados (si ya existe, trae fecha/cancha)
   function abrirProgramarSiguiente({
@@ -946,28 +950,49 @@ const [u15Pairs, setU15Pairs] = useState([]);
     const dia = fecha ? new Date(fecha) : new Date(Date.now() + 60 * 60 * 1000);
 
     try {
-      if (matchId) {
-        // Actualizar partido existente (pudo haberse creado como placeholder)
-        await updateDoc(doc(db, "torneos", id, "partidos", matchId), {
-          localId,
-          visitanteId,
-          dia,
-          cancha: cancha.trim(),
-          updatedAt: serverTimestamp(),
-        });
-      } else {
-        // Crear partido nuevo de la siguiente fase
-        await addDoc(collection(db, "torneos", id, "partidos"), {
-          localId,
-          visitanteId,
-          estado: "pendiente",
-          fase,
-          poSlot,
-          dia,
-          cancha: cancha.trim(),
-          createdAt: serverTimestamp(),
-        });
-      }
+      try {
+  const ref = matchId
+    ? doc(db, "torneos", id, "partidos", matchId)
+    : null;
+
+  const payload = {
+    localId,
+    visitanteId,
+    dia,
+    cancha: cancha.trim(),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (ref) {
+    try {
+      await updateDoc(ref, payload);
+    } catch (e) {
+      // si el doc no existe todavía en el cliente/servidor, hacemos upsert
+      await setDoc(ref, {
+        ...payload,
+        // preservamos metadatos si el doc no existía
+        estado: "pendiente",
+        fase,
+        poSlot,
+        createdAt: serverTimestamp(),
+      }, { merge: true });
+    }
+  } else {
+    await addDoc(collection(db, "torneos", id, "partidos"), {
+      ...payload,
+      estado: "pendiente",
+      fase,
+      poSlot,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  // cerrar modal...
+} catch (err) {
+  console.error(err);
+  alert("No se pudo programar el partido.");
+}
+
       setOpenPOProgram(false);
       setPoProgramForm({
         matchId: null,
@@ -1085,15 +1110,19 @@ const [u15Pairs, setU15Pairs] = useState([]);
   );
 
   const catKey = (s = "") => s.toString().trim().toLowerCase();
-const esU13 = useMemo(
-  () => /\b(u\s*13|u13|sub\s*13)\b/.test(catKey(torneo?.categoria || "")),
-  [torneo]
-);
-const esU15 = useMemo(
-  () => /\b(u\s*15|u15|sub\s*15)\b/.test(catKey(torneo?.categoria || "")),
-  [torneo]
-);
+  const esU13 = useMemo(
+    () => /\b(u\s*13|u13|sub\s*13)\b/.test(catKey(torneo?.categoria || "")),
+    [torneo]
+  );
+  const esU15 = useMemo(
+    () => /\b(u\s*15|u15|sub\s*15)\b/.test(catKey(torneo?.categoria || "")),
+    [torneo]
+  );
 
+  const esU17 = useMemo(
+    () => /\b(u\s*17|u17|sub\s*17)\b/.test(catKey(torneo?.categoria || "")),
+    [torneo]
+  );
 
   // === NUEVO: resultados agrupados por grupo ===
   const resultadosPorGrupo = useMemo(() => {
@@ -1442,12 +1471,426 @@ const esU15 = useMemo(
     }
   };
 
-  // === ARMADO AUTOMÁTICO U17 FEMENINO (stub) ===
-  // TODO: Implementar cruces → triangulares (Oro/Plata) si corresponde
-  const verSiArmarU17Femenino = async (_matchCerrado) => {
-    // Por ahora no hace nada; evita ReferenceError del saveResultado
-    return;
+  // === ARMADO AUTOMÁTICO U17 FEMENINO ===
+  // Cruces iniciales (u17-cruces): poSlot 0,1,2
+  // Triangulares fijos (ids):
+  //   ORO:   u17-oro-0, u17-oro-1, u17-oro-2
+  //   PLATA: u17-plata-0, u17-plata-1, u17-plata-2
+  // === ARMADO AUTOMÁTICO U17 FEMENINO (REEMPLAZAR COMPLETO) ===
+// === ARMADO AUTOMÁTICO U17 FEMENINO (versión con modal doble OR0+PL0) ===
+const verSiArmarU17Femenino = async (matchCerrado) => {
+  const fase = String(matchCerrado?.fase || "");
+  const cerr = (m) =>
+    m?.estado === "finalizado" &&
+    Number.isFinite(m?.scoreLocal) &&
+    Number.isFinite(m?.scoreVisitante) &&
+    m.scoreLocal !== m.scoreVisitante;
+
+  // fusionamos el partido recién cerrado sobre fasePartidos en memoria
+  const merged = fasePartidos.map((m) =>
+    m.id === matchCerrado.id
+      ? {
+          ...m,
+          estado: "finalizado",
+          scoreLocal: matchCerrado.scoreLocal,
+          scoreVisitante: matchCerrado.scoreVisitante,
+        }
+      : m
+  );
+
+  // helpers
+  const ganador = (m) =>
+    m.scoreLocal > m.scoreVisitante ? m.localId : m.visitanteId;
+  const perdedor = (m) =>
+    m.scoreLocal > m.scoreVisitante ? m.visitanteId : m.localId;
+
+  const byId = (idStr) => merged.find((x) => x.id === idStr) || null;
+
+  // cancha "preferida" de una fase: si dos usan la misma, tomamos esa; sino la 1ª disponible
+  const canchaPreferida = (faseKey) => {
+    const ms = merged.filter((m) => m.fase === faseKey);
+    if (!ms.length) return "A definir";
+    const c0 = ms[0]?.cancha || "";
+    const c1 = ms[1]?.cancha || "";
+    if (c0 && c1 && c0 === c1) return c0;
+    return c0 || c1 || "A definir";
   };
+
+  // ---------- A) SOLO CUANDO SE CIERRA UN CRUCE: armar OR0 y PL0 ----------
+  if (fase === "u17-cruces" && cerr(matchCerrado)) {
+    try {
+      const cruces = merged
+        .filter((m) => m.fase === "u17-cruces")
+        .filter((m) => Number.isFinite(m.poSlot))
+        .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
+
+      if (cruces.length === 3 && cruces.every(cerr)) {
+        const W = [ganador(cruces[0]), ganador(cruces[1]), ganador(cruces[2])];
+        const L = [
+          perdedor(cruces[0]),
+          perdedor(cruces[1]),
+          perdedor(cruces[2]),
+        ];
+
+        // ---------- ORO: OR0 ----------
+        const OR0id = "u17-oro-0";
+        const OR0ex = byId(OR0id);
+        await setDoc(
+          doc(db, "torneos", id, "partidos", OR0id),
+          {
+            localId: W[0],
+            visitanteId: W[1], // determinista W0 vs W1
+            estado: OR0ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+            fase: "u17-oro",
+            poSlot: 0,
+            dia: OR0ex?.dia?.seconds
+              ? new Date(OR0ex.dia.seconds * 1000)
+              : new Date(Date.now() + 60 * 60 * 1000),
+            cancha: OR0ex?.cancha || canchaPreferida("u17-cruces"),
+            updatedAt: serverTimestamp(),
+            ...(OR0ex ? {} : { createdAt: serverTimestamp() }),
+          },
+          { merge: true }
+        );
+
+        // ---------- PLATA: PL0 ----------
+        const PL0id = "u17-plata-0";
+        const PL0ex = byId(PL0id);
+        await setDoc(
+          doc(db, "torneos", id, "partidos", PL0id),
+          {
+            localId: L[0],
+            visitanteId: L[1],
+            estado: PL0ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+            fase: "u17-plata",
+            poSlot: 0,
+            dia: PL0ex?.dia?.seconds
+              ? new Date(PL0ex.dia.seconds * 1000)
+              : new Date(Date.now() + 2 * 60 * 60 * 1000),
+            cancha: PL0ex?.cancha || canchaPreferida("u17-cruces"),
+            updatedAt: serverTimestamp(),
+            ...(PL0ex ? {} : { createdAt: serverTimestamp() }),
+          },
+          { merge: true }
+        );
+
+        // ---------- Placeholders OR1/OR2 y PL1/PL2 (sin rivales aún) ----------
+        const OR1id = "u17-oro-1";
+        const OR2id = "u17-oro-2";
+        const OR1ex = byId(OR1id);
+        const OR2ex = byId(OR2id);
+
+        await Promise.all([
+          setDoc(
+            doc(db, "torneos", id, "partidos", OR1id),
+            {
+              estado:
+                OR1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+              fase: "u17-oro",
+              poSlot: 1,
+              dia: OR1ex?.dia?.seconds
+                ? new Date(OR1ex.dia.seconds * 1000)
+                : new Date(Date.now() + 3 * 60 * 60 * 1000),
+              cancha: OR1ex?.cancha || canchaPreferida("u17-oro"),
+              updatedAt: serverTimestamp(),
+              ...(OR1ex ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          ),
+          setDoc(
+            doc(db, "torneos", id, "partidos", OR2id),
+            {
+              estado:
+                OR2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+              fase: "u17-oro",
+              poSlot: 2,
+              dia: OR2ex?.dia?.seconds
+                ? new Date(OR2ex.dia.seconds * 1000)
+                : new Date(Date.now() + 4 * 60 * 60 * 1000),
+              cancha: OR2ex?.cancha || canchaPreferida("u17-oro"),
+              updatedAt: serverTimestamp(),
+              ...(OR2ex ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          ),
+        ]);
+
+        const PL1id = "u17-plata-1";
+        const PL2id = "u17-plata-2";
+        const PL1ex = byId(PL1id);
+        const PL2ex = byId(PL2id);
+
+        await Promise.all([
+          setDoc(
+            doc(db, "torneos", id, "partidos", PL1id),
+            {
+              estado:
+                PL1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+              fase: "u17-plata",
+              poSlot: 1,
+              dia: PL1ex?.dia?.seconds
+                ? new Date(PL1ex.dia.seconds * 1000)
+                : new Date(Date.now() + 3 * 60 * 60 * 1000),
+              cancha: PL1ex?.cancha || canchaPreferida("u17-plata"),
+              updatedAt: serverTimestamp(),
+              ...(PL1ex ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          ),
+          setDoc(
+            doc(db, "torneos", id, "partidos", PL2id),
+            {
+              estado:
+                PL2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+              fase: "u17-plata",
+              poSlot: 2,
+              dia: PL2ex?.dia?.seconds
+                ? new Date(PL2ex.dia.seconds * 1000)
+                : new Date(Date.now() + 4 * 60 * 60 * 1000),
+              cancha: PL2ex?.cancha || canchaPreferida("u17-plata"),
+              updatedAt: serverTimestamp(),
+              ...(PL2ex ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          ),
+        ]);
+
+        // ✅ Abrir UN SOLO modal (doble) para programar PL0 + OR0 juntos
+        abrirProgramarDefinicionesCustom({
+          labelTercer: "U17 - Plata (R1)",
+          labelFinal: "U17 - Oro (R1)",
+          faseTercer: "u17-plata",
+          faseFinal: "u17-oro",
+          // partidos
+          perd0: L[0],
+          perd1: L[1],
+          gan0: W[0],
+          gan1: W[1],
+          // pasar existentes para conservar fecha/cancha si ya estaban
+          tercerExistente: PL0ex ? { id: PL0id, ...PL0ex } : null,
+          finalExistente: OR0ex ? { id: OR0id, ...OR0ex } : null,
+        });
+      }
+    } catch (e) {
+      console.warn("U17F: no se pudo armar OR0/PL0:", e);
+    }
+  }
+
+  // ---------- B) Triangular ORO ----------
+  if (fase === "u17-oro" && cerr(matchCerrado)) {
+    const OR0id = "u17-oro-0";
+    const OR1id = "u17-oro-1";
+    const OR2id = "u17-oro-2";
+
+    // al cerrar OR0 -> OR1 = perdedor de OR0 vs el que no jugó
+    if (matchCerrado.id === OR0id) {
+      const cruces = merged
+        .filter((m) => m.fase === "u17-cruces")
+        .filter(cerr)
+        .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
+      if (cruces.length !== 3) return;
+
+      const W = [ganador(cruces[0]), ganador(cruces[1]), ganador(cruces[2])];
+
+      const loseOR0 =
+        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+          ? matchCerrado.visitanteId
+          : matchCerrado.localId;
+
+      const yaJugaron = new Set([
+        matchCerrado.localId,
+        matchCerrado.visitanteId,
+      ]);
+      const W2 = W.find((x) => !yaJugaron.has(x));
+      if (!W2) return;
+
+      const OR1ex = byId(OR1id);
+      await setDoc(
+        doc(db, "torneos", id, "partidos", OR1id),
+        {
+          localId: loseOR0,
+          visitanteId: W2,
+          estado: OR1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+          fase: "u17-oro",
+          poSlot: 1,
+          dia: OR1ex?.dia?.seconds
+            ? new Date(OR1ex.dia.seconds * 1000)
+            : new Date(Date.now() + 3 * 60 * 60 * 1000),
+          cancha: OR1ex?.cancha || canchaPreferida("u17-oro"),
+          updatedAt: serverTimestamp(),
+          ...(OR1ex ? {} : { createdAt: serverTimestamp() }),
+        },
+        { merge: true }
+      );
+
+      // 👉 Podés mantener este modal simple (OR1) o unificar con otro si preferís
+      abrirProgramarSiguiente({
+        matchId: OR1id,
+        fase: "u17-oro",
+        poSlot: 1,
+        localId: loseOR0,
+        visitanteId: W2,
+        fechaExistente: OR1ex?.dia,
+        canchaExistente: OR1ex?.cancha,
+      });
+
+      return;
+    }
+
+    // al cerrar OR1 -> OR2 (final) = ganador OR0 vs ganador OR1
+    if (matchCerrado.id === OR1id) {
+      const OR0 = byId(OR0id);
+      if (!OR0 || !cerr(OR0)) return;
+
+      const W0 = ganador(OR0);
+      const W1 =
+        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+          ? matchCerrado.localId
+          : matchCerrado.visitanteId;
+
+      const OR2ex = byId(OR2id);
+      await setDoc(
+        doc(db, "torneos", id, "partidos", OR2id),
+        {
+          localId: W0,
+          visitanteId: W1,
+          estado: OR2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+          fase: "u17-oro",
+          poSlot: 2,
+          dia: OR2ex?.dia?.seconds
+            ? new Date(OR2ex.dia.seconds * 1000)
+            : new Date(Date.now() + 4 * 60 * 60 * 1000),
+          cancha: OR2ex?.cancha || canchaPreferida("u17-oro"),
+          updatedAt: serverTimestamp(),
+          ...(OR2ex ? {} : { createdAt: serverTimestamp() }),
+        },
+        { merge: true }
+      );
+
+      abrirProgramarSiguiente({
+        matchId: OR2id,
+        fase: "u17-oro",
+        poSlot: 2,
+        localId: W0,
+        visitanteId: W1,
+        fechaExistente: OR2ex?.dia,
+        canchaExistente: OR2ex?.cancha,
+      });
+
+      return;
+    }
+  }
+
+  // ---------- C) Triangular PLATA ----------
+  if (fase === "u17-plata" && cerr(matchCerrado)) {
+    const PL0id = "u17-plata-0";
+    const PL1id = "u17-plata-1";
+    const PL2id = "u17-plata-2";
+
+    // al cerrar PL0 -> PL1 = perdedor de PL0 vs el que no jugó (entre perdedores)
+    if (matchCerrado.id === PL0id) {
+      const cruces = merged
+        .filter((m) => m.fase === "u17-cruces")
+        .filter(cerr)
+        .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
+      if (cruces.length !== 3) return;
+
+      const L = [
+        perdedor(cruces[0]),
+        perdedor(cruces[1]),
+        perdedor(cruces[2]),
+      ];
+
+      const losePL0 =
+        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+          ? matchCerrado.visitanteId
+          : matchCerrado.localId;
+
+      const yaJugaron = new Set([
+        matchCerrado.localId,
+        matchCerrado.visitanteId,
+      ]);
+      const L2 = L.find((x) => !yaJugaron.has(x));
+      if (!L2) return;
+
+      const PL1ex = byId(PL1id);
+      await setDoc(
+        doc(db, "torneos", id, "partidos", PL1id),
+        {
+          localId: losePL0,
+          visitanteId: L2,
+          estado: PL1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+          fase: "u17-plata",
+          poSlot: 1,
+          dia: PL1ex?.dia?.seconds
+            ? new Date(PL1ex.dia.seconds * 1000)
+            : new Date(Date.now() + 3 * 60 * 60 * 1000),
+          cancha: PL1ex?.cancha || canchaPreferida("u17-plata"),
+          updatedAt: serverTimestamp(),
+          ...(PL1ex ? {} : { createdAt: serverTimestamp() }),
+        },
+        { merge: true }
+      );
+
+      abrirProgramarSiguiente({
+        matchId: PL1id,
+        fase: "u17-plata",
+        poSlot: 1,
+        localId: losePL0,
+        visitanteId: L2,
+        fechaExistente: PL1ex?.dia,
+        canchaExistente: PL1ex?.cancha,
+      });
+
+      return;
+    }
+
+    // al cerrar PL1 -> PL2 (final) = ganador PL0 vs ganador PL1
+    if (matchCerrado.id === PL1id) {
+      const PL0 = byId(PL0id);
+      if (!PL0 || !cerr(PL0)) return;
+
+      const W0 = ganador(PL0);
+      const W1 =
+        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+          ? matchCerrado.localId
+          : matchCerrado.visitanteId;
+
+      const PL2ex = byId(PL2id);
+      await setDoc(
+        doc(db, "torneos", id, "partidos", PL2id),
+        {
+          localId: W0,
+          visitanteId: W1,
+          estado: PL2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
+          fase: "u17-plata",
+          poSlot: 2,
+          dia: PL2ex?.dia?.seconds
+            ? new Date(PL2ex.dia.seconds * 1000)
+            : new Date(Date.now() + 4 * 60 * 60 * 1000),
+          cancha: PL2ex?.cancha || canchaPreferida("u17-plata"),
+          updatedAt: serverTimestamp(),
+          ...(PL2ex ? {} : { createdAt: serverTimestamp() }),
+        },
+        { merge: true }
+      );
+
+      abrirProgramarSiguiente({
+        matchId: PL2id,
+        fase: "u17-plata",
+        poSlot: 2,
+        localId: W0,
+        visitanteId: W1,
+        fechaExistente: PL2ex?.dia,
+        canchaExistente: PL2ex?.cancha,
+      });
+
+      return;
+    }
+  }
+};
+
+
 
   const faseGrouped = useMemo(() => {
     const map = {};
@@ -1649,23 +2092,22 @@ const esU15 = useMemo(
       });
 
       // 4) Avances automáticos (no bloquear si algo falla)
-try {
-  const matchFinalizado = {
-    ...editingMatch,
-    estado: "finalizado",
-    scoreLocal: sl,
-    scoreVisitante: sv,
-  };
+      try {
+        const matchFinalizado = {
+          ...editingMatch,
+          estado: "finalizado",
+          scoreLocal: sl,
+          scoreVisitante: sv,
+        };
 
-  await avanzarPlayoffsSiCorresponde(matchFinalizado, sl, sv);
-  if (esU13) await verSiArmarU13Femenino(matchFinalizado);
-  if (esU15) await verSiArmarU15Femenino(matchFinalizado);
-  // U17 queda igual si más adelante lo activás por categoría
-  await verSiArmarU17Femenino(matchFinalizado);
-} catch (advErr) {
-  console.warn("Avance automático falló:", advErr);
-}
-
+        await avanzarPlayoffsSiCorresponde(matchFinalizado, sl, sv);
+        if (esU13) await verSiArmarU13Femenino(matchFinalizado);
+        if (esU15) await verSiArmarU15Femenino(matchFinalizado);
+        // U17 queda igual si más adelante lo activás por categoría
+        await verSiArmarU17Femenino(matchFinalizado);
+      } catch (advErr) {
+        console.warn("Avance automático falló:", advErr);
+      }
 
       // 5) Cerrar modal
       closeResultado();
@@ -2380,88 +2822,144 @@ try {
   }
 
   function abrirSembrarU15UIModal() {
-  if (!canManage) return;
-  if (modoFase !== "playoffs") {
-    alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U15F.");
-    return;
+    if (!canManage) return;
+    if (modoFase !== "playoffs") {
+      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U15F.");
+      return;
+    }
+
+    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+
+    // Necesitamos A(1..5) y B(1..4)
+    if (topA.length < 5 || topB.length < 4) {
+      alert("Faltan posiciones: U15F requiere al menos A(1..5) y B(1..4).");
+      return;
+    }
+
+    const [A1, A2, A3, A4, A5] = topA;
+    const [B1, B2, B3, B4] = topB;
+
+    const base = Date.now() + 60 * 60 * 1000;
+    const dt = (h) => toDatetimeLocalValue(new Date(base + h * 60 * 60 * 1000));
+
+    const pairs = [
+      // Play-in/reclasificación: A4 vs A5
+      {
+        label: "Reclasificación (A4 vs A5)",
+        fase: "u15a-reclasif",
+        poSlot: 0,
+        localId: A4,
+        visitanteId: A5,
+        fecha: dt(0),
+        cancha: "",
+      },
+
+      // Semifinales ORO (igual que U13): 1A–2B y 1B–2A
+      {
+        label: "Semi Oro 1 (1A vs 2B)",
+        fase: "oro-semi",
+        poSlot: 0,
+        localId: A1,
+        visitanteId: B2,
+        fecha: dt(1),
+        cancha: "",
+      },
+      {
+        label: "Semi Oro 2 (1B vs 2A)",
+        fase: "oro-semi",
+        poSlot: 1,
+        localId: B1,
+        visitanteId: A2,
+        fecha: dt(2),
+        cancha: "",
+      },
+
+      // Semifinales PLATA:
+      // slot 1 queda fijo: 3A vs 4B
+      {
+        label: "Semi Plata 2 (3A vs 4B)",
+        fase: "plata-semi",
+        poSlot: 1,
+        localId: A3,
+        visitanteId: B4,
+        fecha: dt(3),
+        cancha: "",
+      },
+
+      // slot 0 es el especial: 3B vs GANADOR(A4–A5), con id fijo para que se complete solo
+      {
+        label: "Semi Plata 1 (3B vs ganador A4–A5)",
+        fase: "plata-semi",
+        poSlot: 0,
+        localId: B3,
+        visitanteId: null, // se completa luego
+        fecha: dt(4),
+        cancha: "",
+        fixedId: "u15-plata-semi-0", // coincide con verSiArmarU15Femenino
+      },
+    ];
+
+    setU15Pairs(pairs);
+    setOpenU15Seed(true);
   }
 
-  const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
-  const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+  function abrirSembrarU17UIModal() {
+    if (!canManage) return;
+    if (modoFase !== "playoffs") {
+      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U17F.");
+      return;
+    }
 
-  // Necesitamos A(1..5) y B(1..4)
-  if (topA.length < 5 || topB.length < 4) {
-    alert("Faltan posiciones: U15F requiere al menos A(1..5) y B(1..4).");
-    return;
+    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+
+    // Necesitamos A(1..3) y B(1..3)
+    if (topA.length < 3 || topB.length < 3) {
+      alert("Faltan posiciones: U17F requiere A(1..3) y B(1..3).");
+      return;
+    }
+
+    const [A1, A2, A3] = topA;
+    const [B1, B2, B3] = topB;
+
+    // Cruces iniciales pedidos: 1A vs 3B, 2A vs 2B, 1B vs 3A
+    const base = Date.now() + 60 * 60 * 1000;
+    const dt = (h) => toDatetimeLocalValue(new Date(base + h * 60 * 60 * 1000));
+
+    const pairs = [
+      {
+        label: "Cruce 1 (1A vs 3B)",
+        fase: "u17-cruces",
+        poSlot: 0,
+        localId: A1,
+        visitanteId: B3,
+        fecha: dt(0),
+        cancha: "",
+      },
+      {
+        label: "Cruce 2 (2A vs 2B)",
+        fase: "u17-cruces",
+        poSlot: 1,
+        localId: A2,
+        visitanteId: B2,
+        fecha: dt(1),
+        cancha: "",
+      },
+      {
+        label: "Cruce 3 (1B vs 3A)",
+        fase: "u17-cruces",
+        poSlot: 2,
+        localId: B1,
+        visitanteId: A3,
+        fecha: dt(2),
+        cancha: "",
+      },
+    ];
+
+    setU17Pairs(pairs);
+    setOpenU17Seed(true);
   }
-
-  const [A1, A2, A3, A4, A5] = topA;
-  const [B1, B2, B3, B4] = topB;
-
-  const base = Date.now() + 60 * 60 * 1000;
-  const dt = (h) => toDatetimeLocalValue(new Date(base + h * 60 * 60 * 1000));
-
-  const pairs = [
-    // Play-in/reclasificación: A4 vs A5
-    {
-      label: "Reclasificación (A4 vs A5)",
-      fase: "u15a-reclasif",
-      poSlot: 0,
-      localId: A4,
-      visitanteId: A5,
-      fecha: dt(0),
-      cancha: "",
-    },
-
-    // Semifinales ORO (igual que U13): 1A–2B y 1B–2A
-    {
-      label: "Semi Oro 1 (1A vs 2B)",
-      fase: "oro-semi",
-      poSlot: 0,
-      localId: A1,
-      visitanteId: B2,
-      fecha: dt(1),
-      cancha: "",
-    },
-    {
-      label: "Semi Oro 2 (1B vs 2A)",
-      fase: "oro-semi",
-      poSlot: 1,
-      localId: B1,
-      visitanteId: A2,
-      fecha: dt(2),
-      cancha: "",
-    },
-
-    // Semifinales PLATA:
-    // slot 1 queda fijo: 3A vs 4B
-    {
-      label: "Semi Plata 2 (3A vs 4B)",
-      fase: "plata-semi",
-      poSlot: 1,
-      localId: A3,
-      visitanteId: B4,
-      fecha: dt(3),
-      cancha: "",
-    },
-
-    // slot 0 es el especial: 3B vs GANADOR(A4–A5), con id fijo para que se complete solo
-    {
-      label: "Semi Plata 1 (3B vs ganador A4–A5)",
-      fase: "plata-semi",
-      poSlot: 0,
-      localId: B3,
-      visitanteId: null,           // se completa luego
-      fecha: dt(4),
-      cancha: "",
-      fixedId: "u15-plata-semi-0", // coincide con verSiArmarU15Femenino
-    },
-  ];
-
-  setU15Pairs(pairs);
-  setOpenU15Seed(true);
-}
-
 
   // Guarda los partidos que completaste en el modal
   async function guardarSembradoU13(e) {
@@ -2517,56 +3015,101 @@ try {
   }
 
   async function guardarSembradoU15(e) {
-  e.preventDefault();
-  if (!canManage) return;
+    e.preventDefault();
+    if (!canManage) return;
 
-  // evitar duplicados: borro mismo (fase,slot) si ya existe
-  const keys = new Set(u15Pairs.map((p) => `${p.fase}::${p.poSlot}`));
-  const existentes = fasePartidos.filter((m) =>
-    keys.has(`${m.fase}::${m.poSlot}`)
-  );
-  await Promise.all(
-    existentes.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
-  );
+    // evitar duplicados: borro mismo (fase,slot) si ya existe
+    const keys = new Set(u15Pairs.map((p) => `${p.fase}::${p.poSlot}`));
+    const existentes = fasePartidos.filter((m) =>
+      keys.has(`${m.fase}::${m.poSlot}`)
+    );
+    await Promise.all(
+      existentes.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+    );
 
-  const writes = [];
-  for (const p of u15Pairs) {
-    if (!p.fecha) return alert(`Completá fecha/hora en: ${p.label}`);
-    if (!p.cancha?.trim()) return alert(`Completá cancha en: ${p.label}`);
+    const writes = [];
+    for (const p of u15Pairs) {
+      if (!p.fecha) return alert(`Completá fecha/hora en: ${p.label}`);
+      if (!p.cancha?.trim()) return alert(`Completá cancha en: ${p.label}`);
 
-    const payload = {
-      localId: p.localId,
-      ...(p.visitanteId ? { visitanteId: p.visitanteId } : {}), // el placeholder espera ganador
-      estado: "pendiente",
-      fase: p.fase,
-      poSlot: p.poSlot,
-      dia: new Date(p.fecha),
-      cancha: p.cancha.trim(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
+      const payload = {
+        localId: p.localId,
+        ...(p.visitanteId ? { visitanteId: p.visitanteId } : {}), // el placeholder espera ganador
+        estado: "pendiente",
+        fase: p.fase,
+        poSlot: p.poSlot,
+        dia: new Date(p.fecha),
+        cancha: p.cancha.trim(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
 
-    if (p.fixedId) {
-      writes.push(
-        setDoc(doc(db, "torneos", id, "partidos", p.fixedId), payload, {
-          merge: true,
-        })
-      );
-    } else {
-      writes.push(addDoc(collection(db, "torneos", id, "partidos"), payload));
+      if (p.fixedId) {
+        writes.push(
+          setDoc(doc(db, "torneos", id, "partidos", p.fixedId), payload, {
+            merge: true,
+          })
+        );
+      } else {
+        writes.push(addDoc(collection(db, "torneos", id, "partidos"), payload));
+      }
+    }
+
+    try {
+      await Promise.all(writes);
+      setOpenU15Seed(false);
+      setTab("fase");
+    } catch (err) {
+      console.error(err);
+      alert("No se pudieron crear los cruces U15F.");
     }
   }
 
-  try {
-    await Promise.all(writes);
-    setOpenU15Seed(false);
-    setTab("fase");
-  } catch (err) {
-    console.error(err);
-    alert("No se pudieron crear los cruces U15F.");
-  }
-}
+  async function guardarSembradoU17(e) {
+    e.preventDefault();
+    if (!canManage) return;
 
+    // Validaciones
+    for (const p of u17Pairs) {
+      if (!p.fecha) return alert(`Completá fecha/hora en: ${p.label}`);
+      if (!p.cancha?.trim()) return alert(`Completá cancha en: ${p.label}`);
+    }
+
+    try {
+      // Evitar duplicados: borrar existentes de u17-cruces
+      const existentes = fasePartidos.filter((m) => m.fase === "u17-cruces");
+      await Promise.all(
+        existentes.map((m) =>
+          deleteDoc(doc(db, "torneos", id, "partidos", m.id))
+        )
+      );
+
+      // Crear los 3 cruces iniciales
+      await Promise.all(
+        u17Pairs.map((p) =>
+          addDoc(collection(db, "torneos", id, "partidos"), {
+            localId: p.localId,
+            visitanteId: p.visitanteId,
+            estado: "pendiente",
+            fase: "u17-cruces",
+            poSlot: p.poSlot,
+            dia: new Date(p.fecha),
+            cancha: p.cancha.trim(),
+            createdAt: serverTimestamp(),
+          })
+        )
+      );
+
+      setOpenU17Seed(false);
+      setTab("fase");
+      alert(
+        "U17F sembrado. Al cerrar los 3 cruces se generarán los triangulares Oro y Plata automáticamente."
+      );
+    } catch (err) {
+      console.error(err);
+      alert("No se pudieron crear los cruces U17F.");
+    }
+  }
 
   const borrarCrucesFaseFinal = async () => {
     if (!canManage) return;
@@ -3602,41 +4145,50 @@ try {
                 {canManage && (
                   <div className="w-full sm:w-auto">
                     <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                      <button
+                        onClick={abrirPOConfig}
+                        className={`${BTN} ${BTN_PRIMARY} ${BTN_FULL} from-indigo-600 to-purple-600`}
+                      >
+                        <IconPlus /> Generar
+                      </button>
+
+                      {esU13 && (
+                        <button
+                          onClick={abrirSembrarU13UIModal}
+                          className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+                        >
+                          Sembrar U13F
+                        </button>
+                      )}
+
+                      {esU15 && (
+                        <button
+                          onClick={abrirSembrarU15UIModal}
+                          className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+                        >
+                          Sembrar U15F
+                        </button>
+                      )}
+
+                      {esU17 && (
   <button
-    onClick={abrirPOConfig}
-    className={`${BTN} ${BTN_PRIMARY} ${BTN_FULL} from-indigo-600 to-purple-600`}
+    onClick={abrirSembrarU17UIModal}
+    className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
   >
-    <IconPlus /> Generar
+    Sembrar U17F
   </button>
+)}
 
-  {esU13 && (
-    <button
-      onClick={abrirSembrarU13UIModal}
-      className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
-    >
-      Sembrar U13F
-    </button>
-  )}
 
-  {esU15 && (
-    <button
-      onClick={abrirSembrarU15UIModal}
-      className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
-    >
-      Sembrar U15F
-    </button>
-  )}
-
-  {fasePartidos.length > 0 && (
-    <button
-      onClick={borrarCrucesFaseFinal}
-      className={`${BTN} ${BTN_MUTED} ${BTN_FULL}`}
-    >
-      Borrar cruces
-    </button>
-  )}
-</div>
-
+                      {fasePartidos.length > 0 && (
+                        <button
+                          onClick={borrarCrucesFaseFinal}
+                          className={`${BTN} ${BTN_MUTED} ${BTN_FULL}`}
+                        >
+                          Borrar cruces
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -4150,98 +4702,193 @@ try {
       )}
 
       {openU15Seed && canManage && (
-  <div
-    className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
-    onClick={() => setOpenU15Seed(false)}
-  >
-    <div
-      className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <h3 className="text-lg font-semibold mb-1">Sembrar U15F</h3>
-      <p className="text-sm text-gray-600 mb-3">
-        Definí día/hora y cancha para reclasificación y semifinales.
-      </p>
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          onClick={() => setOpenU15Seed(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-1">Sembrar U15F</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Definí día/hora y cancha para reclasificación y semifinales.
+            </p>
 
-      <form onSubmit={guardarSembradoU15} className="space-y-4">
-        {u15Pairs.map((p, idx) => (
-          <div key={idx} className="rounded-xl border p-3">
-            <div className="font-medium mb-1">{p.label}</div>
-            <div className="text-xs text-gray-600 mb-2">
-              <EquipoTag
-                nombre={equiposMap[p.localId] || "Local"}
-                logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
-              />{" "}
-              vs{" "}
-              {p.visitanteId ? (
-                <EquipoTag
-                  nombre={equiposMap[p.visitanteId] || "Visitante"}
-                  logoUrl={
-                    equipos.find((e) => e.id === p.visitanteId)?.logoUrl
-                  }
-                />
-              ) : (
-                <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                  Ganador A4–A5
-                </span>
-              )}
-            </div>
+            <form onSubmit={guardarSembradoU15} className="space-y-4">
+              {u15Pairs.map((p, idx) => (
+                <div key={idx} className="rounded-xl border p-3">
+                  <div className="font-medium mb-1">{p.label}</div>
+                  <div className="text-xs text-gray-600 mb-2">
+                    <EquipoTag
+                      nombre={equiposMap[p.localId] || "Local"}
+                      logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
+                    />{" "}
+                    vs{" "}
+                    {p.visitanteId ? (
+                      <EquipoTag
+                        nombre={equiposMap[p.visitanteId] || "Visitante"}
+                        logoUrl={
+                          equipos.find((e) => e.id === p.visitanteId)?.logoUrl
+                        }
+                      />
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                        Ganador A4–A5
+                      </span>
+                    )}
+                  </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm">Fecha & hora</label>
-                <input
-                  type="datetime-local"
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  value={p.fecha}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setU15Pairs((arr) =>
-                      arr.map((x, i) => (i === idx ? { ...x, fecha: v } : x))
-                    );
-                  }}
-                  required
-                />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm">Fecha & hora</label>
+                      <input
+                        type="datetime-local"
+                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        value={p.fecha}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setU15Pairs((arr) =>
+                            arr.map((x, i) =>
+                              i === idx ? { ...x, fecha: v } : x
+                            )
+                          );
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm">Cancha</label>
+                      <input
+                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        placeholder="Ej. Club A"
+                        value={p.cancha}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setU15Pairs((arr) =>
+                            arr.map((x, i) =>
+                              i === idx ? { ...x, cancha: v } : x
+                            )
+                          );
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenU15Seed(false)}
+                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                >
+                  Crear cruces
+                </button>
               </div>
-              <div>
-                <label className="text-sm">Cancha</label>
-                <input
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  placeholder="Ej. Club A"
-                  value={p.cancha}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setU15Pairs((arr) =>
-                      arr.map((x, i) => (i === idx ? { ...x, cancha: v } : x))
-                    );
-                  }}
-                  required
-                />
-              </div>
-            </div>
+            </form>
           </div>
-        ))}
-
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setOpenU15Seed(false)}
-            className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
-          >
-            Crear cruces
-          </button>
         </div>
-      </form>
-    </div>
-  </div>
-)}
+      )}
 
+      {/* Modal: Sembrar U17F */}
+      {openU17Seed && canManage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          onClick={() => setOpenU17Seed(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-1">Sembrar U17 Femenino</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Definí fecha y cancha para los 3 cruces iniciales (A vs B). Luego
+              los triangulares Oro y Plata se generan automáticamente al cargar
+              resultados.
+            </p>
+
+            <form onSubmit={guardarSembradoU17} className="space-y-4">
+              {u17Pairs.map((p, idx) => (
+                <div key={idx} className="rounded-xl border p-4">
+                  <div className="font-medium mb-2">{p.label}</div>
+                  <div className="text-sm text-gray-600 mb-2">
+                    <EquipoTag
+                      nombre={equiposMap[p.localId] || "Local"}
+                      logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
+                    />{" "}
+                    vs{" "}
+                    <EquipoTag
+                      nombre={equiposMap[p.visitanteId] || "Visitante"}
+                      logoUrl={
+                        equipos.find((e) => e.id === p.visitanteId)?.logoUrl
+                      }
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm">Fecha & hora</label>
+                      <input
+                        type="datetime-local"
+                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        value={p.fecha}
+                        onChange={(e) =>
+                          setU17Pairs((arr) =>
+                            arr.map((x, i) =>
+                              i === idx ? { ...x, fecha: e.target.value } : x
+                            )
+                          )
+                        }
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm">Cancha</label>
+                      <input
+                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        value={p.cancha}
+                        onChange={(e) =>
+                          setU17Pairs((arr) =>
+                            arr.map((x, i) =>
+                              i === idx ? { ...x, cancha: e.target.value } : x
+                            )
+                          )
+                        }
+                        placeholder="Ej. Club A"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenU17Seed(false)}
+                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                >
+                  <IconUpload /> Crear cruces
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Nuevo partido */}
       {openMatch && canManage && (
