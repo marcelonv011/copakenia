@@ -325,6 +325,13 @@ const ganadorDe = (match, sl, sv) => {
   return sl > sv ? match.localId : match.visitanteId;
 };
 
+/** Devuelve id del perdedor (no se permiten empates) */
+const perdedorDe = (match, sl, sv) => {
+  if (!isPO(match?.fase)) return null;
+  return sl > sv ? match.visitanteId : match.localId;
+};
+
+
 /* ---------- Button style helpers (global, compacto) ---------- */
 const BTN =
   // móvil: compacto por defecto
@@ -716,41 +723,135 @@ export default function Torneo() {
     cancha: "",
   });
 
+  // --- Helpers para 3.º puesto + Final (modal doble) ---
+function sCanchaPreferida() {
+  const semis = fasePartidos.filter((m) => m.fase === "semi");
+  if (semis.length >= 2) {
+    const c0 = semis[0]?.cancha || "";
+    const c1 = semis[1]?.cancha || "";
+    if (c0 && c1 && c0 === c1) return c0;
+    return c0 || c1 || "A definir";
+  }
+  return "A definir";
+}
+
+function abrirProgramarDefiniciones({
+  perd0, perd1, gan0, gan1,
+  tercerExistente, finalExistente,
+}) {
+  const porDefectoTercer = toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
+  const porDefectoFinal  = toDatetimeLocalValue(new Date(Date.now() + 3 * 60 * 60 * 1000));
+
+  setPoDefsForm({
+    labelTercer: "3.º puesto",
+    labelFinal: "Final",
+    tercer: {
+      matchId: tercerExistente?.id || null,
+      localId: perd0,
+      visitanteId: perd1,
+      fecha: tercerExistente?.dia?.seconds
+        ? toDatetimeLocalValue(new Date(tercerExistente.dia.seconds * 1000))
+        : porDefectoTercer,
+      cancha: (tercerExistente?.cancha || sCanchaPreferida()),
+    },
+    final: {
+      matchId: finalExistente?.id || null,
+      localId: gan0,
+      visitanteId: gan1,
+      fecha: finalExistente?.dia?.seconds
+        ? toDatetimeLocalValue(new Date(finalExistente.dia.seconds * 1000))
+        : porDefectoFinal,
+      cancha: (finalExistente?.cancha || sCanchaPreferida()),
+    },
+  });
+  setOpenPODefs(true);
+}
+
+async function guardarDefsProgramacion(e) {
+  e.preventDefault();
+  if (!canManage) return;
+
+  const { tercer, final } = poDefsForm;
+
+  const writes = [];
+  const mkPayload = (fase, slot, d) => ({
+    localId: d.localId,
+    visitanteId: d.visitanteId,
+    estado: "pendiente",
+    fase,
+    poSlot: slot,
+    dia: new Date(d.fecha),
+    cancha: (d.cancha || "").trim(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // 3.º puesto
+  if (tercer.localId && tercer.visitanteId && tercer.fecha && tercer.cancha) {
+    if (tercer.matchId) {
+      writes.push(updateDoc(doc(db, "torneos", id, "partidos", tercer.matchId), mkPayload("tercer", 0, tercer)));
+    } else {
+      writes.push(addDoc(collection(db, "torneos", id, "partidos"), { ...mkPayload("tercer", 0, tercer), createdAt: serverTimestamp() }));
+    }
+  }
+
+  // Final
+  if (final.localId && final.visitanteId && final.fecha && final.cancha) {
+    if (final.matchId) {
+      writes.push(updateDoc(doc(db, "torneos", id, "partidos", final.matchId), mkPayload("final", 0, final)));
+    } else {
+      writes.push(addDoc(collection(db, "torneos", id, "partidos"), { ...mkPayload("final", 0, final), createdAt: serverTimestamp() }));
+    }
+  }
+
+  try {
+    await Promise.all(writes);
+    setOpenPODefs(false);
+  } catch (err) {
+    console.error(err);
+    alert("No se pudo programar las definiciones.");
+  }
+}
+
+
+  // Modal doble: 3.º puesto + Final
+const [openPODefs, setOpenPODefs] = useState(false);
+const [poDefsForm, setPoDefsForm] = useState({
+  labelTercer: "3.º puesto",
+  labelFinal: "Final",
+  tercer: { matchId: null, localId: "", visitanteId: "", fecha: "", cancha: "" },
+  final:  { matchId: null, localId: "", visitanteId: "", fecha: "", cancha: "" },
+});
+
+
   // Abrir modal con datos precargados (si ya existe, trae fecha/cancha)
   function abrirProgramarSiguiente({
-    matchId = null,
+  matchId = null,
+  fase,
+  poSlot,
+  localId,
+  visitanteId,
+  fechaExistente,
+  canchaExistente,
+}) {
+  const porDefecto = toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
+  const faseLabel =
+    ({ cuartos: "Cuartos de final", semi: "Semifinal", tercer: "3.º puesto", final: "Final" }[fase]) || fase;
+
+  setPoProgramForm({
+    matchId,
     fase,
+    faseLabel,
     poSlot,
     localId,
     visitanteId,
-    fechaExistente,
-    canchaExistente,
-  }) {
-    // default = dentro de 1 hora, formateado en hora LOCAL
-    const porDefecto = toDatetimeLocalValue(
-      new Date(Date.now() + 60 * 60 * 1000)
-    );
+    fecha: fechaExistente
+      ? toDatetimeLocalValue(new Date(fechaExistente.seconds * 1000))
+      : porDefecto,
+    cancha: canchaExistente || "",
+  });
+  setOpenPOProgram(true);
+}
 
-    const faseLabel =
-      { cuartos: "Cuartos de final", semi: "Semifinal", final: "Final" }[
-        fase
-      ] || fase;
-
-    setPoProgramForm({
-      matchId,
-      fase,
-      faseLabel,
-      poSlot,
-      localId,
-      visitanteId,
-      // si hay fecha guardada, mostrar exactamente esa en local; si no, porDefecto
-      fecha: fechaExistente
-        ? toDatetimeLocalValue(new Date(fechaExistente.seconds * 1000))
-        : porDefecto,
-      cancha: canchaExistente || "",
-    });
-    setOpenPOProgram(true);
-  }
 
   async function guardarProgramacionSiguiente(e) {
     e.preventDefault();
@@ -977,14 +1078,16 @@ export default function Torneo() {
   );
   const hayFaseFinal = !!faseCopas || fasePartidos.length > 0;
 
-  const fasesOrder = ["octavos", "cuartos", "semi", "final", "otros"];
-  const faseLabels = {
-    octavos: "Octavos",
-    cuartos: "Cuartos",
-    semi: "Semifinales",
-    final: "Final",
-    otros: "Otros",
-  };
+  const fasesOrder = ["octavos", "cuartos", "semi", "tercer", "final", "otros"];
+const faseLabels = {
+  octavos: "Octavos",
+  cuartos: "Cuartos",
+  semi: "Semifinales",
+  tercer: "3.º puesto",
+  final: "Final",
+  otros: "Otros",
+};
+
   const faseGrouped = useMemo(() => {
     const map = {};
     for (const m of fasePartidos) (map[m.fase || "otros"] ||= []).push(m);
@@ -1072,78 +1175,73 @@ export default function Torneo() {
     setSaving(false);
   };
 
-  /** (NUEVO) Avanza automáticamente el cuadro de playoffs cuando corresponde */
-  async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
-    if (!canManage) return;
-    if (!isPO(match?.fase)) return;
-    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) return;
+/** Avanza automáticamente y, cuando se cierran las dos semis,
+ *  abre UN SOLO modal con 3.º puesto (ARRIBA) y FINAL (ABAJO). */
+async function avanzarPlayoffsSiCorresponde(match, sl, sv) {
+  if (!canManage) return;
+  if (!isPO(match?.fase)) return;
+  if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) return;
 
-    const ganador = ganadorDe(match, sl, sv);
-    if (!ganador) return;
+  // Sólo nos interesa el caso "semi" para disparar el modal doble.
+  if (match.fase !== "semi") return;
 
-    const faseActual = match.fase;
-    const siguiente = nextFase(faseActual);
-    if (!siguiente) return; // ya era final
+  // 🔧 FUSIÓN LOCAL: tomamos fasePartidos actual y "inyectamos" el resultado recién guardado
+  const fasePartidosMerged = fasePartidos.map((m) =>
+    m.id === match.id
+      ? {
+          ...m,
+          estado: "finalizado",
+          scoreLocal: sl,
+          scoreVisitante: sv,
+        }
+      : m
+  );
 
-    // Emparejamiento por slots: (0,1)->0 ; (2,3)->1 ; (4,5)->2 ; (6,7)->3 ; etc.
-    const slot = Number.isFinite(match?.poSlot) ? match.poSlot : null;
-    if (!Number.isFinite(slot)) return;
+  // ¿Tenemos las dos semifinales con slot?
+  const semis = fasePartidosMerged
+    .filter((m) => m.fase === "semi")
+    .filter((m) => Number.isFinite(m.poSlot));
 
-    const parSlot = slot ^ 1; // 0<->1, 2<->3, etc.
-    const vecinos = fasePartidos.filter(
-      (m) => m.fase === faseActual && Number.isFinite(m.poSlot)
-    );
-    const hermano = vecinos.find((m) => m.poSlot === parSlot);
+  // Cerradas (finalizado y con scores válidos)
+  const semisCerradas = semis.filter(
+    (m) =>
+      m.estado === "finalizado" &&
+      Number.isFinite(m.scoreLocal) &&
+      Number.isFinite(m.scoreVisitante)
+  );
 
-    // Necesitamos que el "hermano" esté finalizado
-    const hermanoFinal =
-      hermano &&
-      hermano.estado === "finalizado" &&
-      Number.isFinite(hermano.scoreLocal) &&
-      Number.isFinite(hermano.scoreVisitante);
-    if (!hermanoFinal) return;
+  if (semisCerradas.length !== 2) return;
 
-    const ganadorHermano = ganadorDe(
-      hermano,
-      hermano.scoreLocal,
-      hermano.scoreVisitante
-    );
-    if (!ganadorHermano) return;
+  const s0 = semisCerradas.find((m) => m.poSlot === 0) || semisCerradas[0];
+  const s1 = semisCerradas.find((m) => m.poSlot === 1) || semisCerradas[1];
 
-    const nextSlot = Math.floor(Math.min(slot, parSlot) / 2);
-    // Por convención: el ganador del slot PAR queda como local
-    const localId = (slot % 2 === 0 ? ganador : ganadorHermano) || ganador;
-    const visitanteId =
-      (slot % 2 === 0 ? ganadorHermano : ganador) || ganadorHermano;
+  const gan0 = ganadorDe(s0, s0.scoreLocal, s0.scoreVisitante);
+  const gan1 = ganadorDe(s1, s1.scoreLocal, s1.scoreVisitante);
+  const perd0 = perdedorDe(s0, s0.scoreLocal, s0.scoreVisitante);
+  const perd1 = perdedorDe(s1, s1.scoreLocal, s1.scoreVisitante);
 
-    // ¿Ya existe ese partido de la fase siguiente?
-    const ya = fasePartidos.find(
-      (m) => m.fase === siguiente && m.poSlot === nextSlot
-    );
-    if (ya) {
-      // Abrimos modal para ajustar fecha/cancha y, si hace falta, participantes
-      abrirProgramarSiguiente({
-        matchId: ya.id,
-        fase: siguiente,
-        poSlot: nextSlot,
-        localId,
-        visitanteId,
-        fechaExistente: ya.dia,
-        canchaExistente: ya.cancha,
-      });
-      return;
-    }
+  if (!gan0 || !gan1 || !perd0 || !perd1) return;
 
-    // Abrir modal lindo para programar el partido siguiente (sin prompts del navegador)
-    abrirProgramarSiguiente({
-      matchId: null,
-      fase: siguiente,
-      poSlot: nextSlot,
-      localId,
-      visitanteId,
-      // sin fecha/cancha existentes: van por defecto
-    });
-  }
+  // ¿Ya existen placeholders de 3.º y final?
+  const tercerExistente =
+    fasePartidosMerged.find((m) => m.fase === "tercer" && m.poSlot === 0) ||
+    null;
+  const finalExistente =
+    fasePartidosMerged.find((m) => m.fase === "final" && m.poSlot === 0) ||
+    null;
+
+  abrirProgramarDefiniciones({
+    perd0,
+    perd1,
+    gan0,
+    gan1,
+    tercerExistente,
+    finalExistente,
+  });
+}
+
+
+
 
   const saveResultado = async (e) => {
     e.preventDefault();
@@ -2933,6 +3031,126 @@ export default function Torneo() {
           </div>
         </div>
       )}
+
+      {openPODefs && canManage && (
+  <div
+    className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+    onClick={() => setOpenPODefs(false)}
+  >
+    <div
+      className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <h3 className="text-lg font-semibold mb-1">Programar definiciones</h3>
+      <p className="text-sm text-gray-600 mb-3">
+        Primero 3.º puesto (arriba) y luego la Final (abajo).
+      </p>
+
+      <form onSubmit={guardarDefsProgramacion} className="space-y-5">
+        {/* 3.º PUESTO */}
+        <div className="rounded-xl border p-4">
+          <div className="font-medium mb-2">{poDefsForm.labelTercer}</div>
+          <div className="text-sm text-gray-600 mb-2">
+            <EquipoTag
+              nombre={equiposMap[poDefsForm.tercer.localId] || "Local"}
+              logoUrl={equipos.find((e) => e.id === poDefsForm.tercer.localId)?.logoUrl}
+            />{" "}
+            vs{" "}
+            <EquipoTag
+              nombre={equiposMap[poDefsForm.tercer.visitanteId] || "Visitante"}
+              logoUrl={equipos.find((e) => e.id === poDefsForm.tercer.visitanteId)?.logoUrl}
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm">Fecha & hora</label>
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded-xl border px-3 py-2"
+                value={poDefsForm.tercer.fecha}
+                onChange={(e) =>
+                  setPoDefsForm((f) => ({ ...f, tercer: { ...f.tercer, fecha: e.target.value } }))
+                }
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm">Cancha</label>
+              <input
+                className="mt-1 w-full rounded-xl border px-3 py-2"
+                value={poDefsForm.tercer.cancha}
+                onChange={(e) =>
+                  setPoDefsForm((f) => ({ ...f, tercer: { ...f.tercer, cancha: e.target.value } }))
+                }
+                placeholder="Ej. Club A"
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* FINAL */}
+        <div className="rounded-xl border p-4">
+          <div className="font-medium mb-2">{poDefsForm.labelFinal}</div>
+          <div className="text-sm text-gray-600 mb-2">
+            <EquipoTag
+              nombre={equiposMap[poDefsForm.final.localId] || "Local"}
+              logoUrl={equipos.find((e) => e.id === poDefsForm.final.localId)?.logoUrl}
+            />{" "}
+            vs{" "}
+            <EquipoTag
+              nombre={equiposMap[poDefsForm.final.visitanteId] || "Visitante"}
+              logoUrl={equipos.find((e) => e.id === poDefsForm.final.visitanteId)?.logoUrl}
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm">Fecha & hora</label>
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded-xl border px-3 py-2"
+                value={poDefsForm.final.fecha}
+                onChange={(e) =>
+                  setPoDefsForm((f) => ({ ...f, final: { ...f.final, fecha: e.target.value } }))
+                }
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm">Cancha</label>
+              <input
+                className="mt-1 w-full rounded-xl border px-3 py-2"
+                value={poDefsForm.final.cancha}
+                onChange={(e) =>
+                  setPoDefsForm((f) => ({ ...f, final: { ...f.final, cancha: e.target.value } }))
+                }
+                placeholder="Ej. Club A"
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setOpenPODefs(false)}
+            className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+          >
+            Guardar ambas
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
+
 
       {/* Programar siguiente cruce (Playoffs) */}
       {openPOProgram && canManage && (

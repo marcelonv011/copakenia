@@ -36,7 +36,7 @@ export default function App() {
           >
             {/* 👇 Mantiene proporción del archivo (no lo recorta) */}
             <span className='text-xl sm:text-2xl font-bold tracking-tight text-gray-900'>
-              Copa Kenia
+              Copa Kenia Comercial Eldorado
             </span>
           </div>
 

@@ -65,7 +65,7 @@ export default function Login() {
 
           {/* Título */}
           <h1 className='text-4xl sm:text-6xl font-black tracking-tight text-gray-900 text-center drop-shadow'>
-            Copa Kenia
+            Copa Kenia Comercial Eldorado
           </h1>
 
           {/* Subtítulo */}
