@@ -1084,6 +1084,17 @@ const [u15Pairs, setU15Pairs] = useState([]);
     [partidos]
   );
 
+  const catKey = (s = "") => s.toString().trim().toLowerCase();
+const esU13 = useMemo(
+  () => /\b(u\s*13|u13|sub\s*13)\b/.test(catKey(torneo?.categoria || "")),
+  [torneo]
+);
+const esU15 = useMemo(
+  () => /\b(u\s*15|u15|sub\s*15)\b/.test(catKey(torneo?.categoria || "")),
+  [torneo]
+);
+
+
   // === NUEVO: resultados agrupados por grupo ===
   const resultadosPorGrupo = useMemo(() => {
     const map = {};
@@ -1638,22 +1649,23 @@ const [u15Pairs, setU15Pairs] = useState([]);
       });
 
       // 4) Avances automáticos (no bloquear si algo falla)
-      try {
-        const matchFinalizado = {
-          ...editingMatch,
-          estado: "finalizado",
-          scoreLocal: sl,
-          scoreVisitante: sv,
-        };
+try {
+  const matchFinalizado = {
+    ...editingMatch,
+    estado: "finalizado",
+    scoreLocal: sl,
+    scoreVisitante: sv,
+  };
 
-        await avanzarPlayoffsSiCorresponde(matchFinalizado, sl, sv);
-        await verSiArmarU13Femenino(matchFinalizado);
-        await verSiArmarU15Femenino(matchFinalizado);
-        await verSiArmarU17Femenino(matchFinalizado);
-      } catch (advErr) {
-        console.warn("Avance automático falló:", advErr);
-        // No hacemos alert para no cortar el flujo de guardado
-      }
+  await avanzarPlayoffsSiCorresponde(matchFinalizado, sl, sv);
+  if (esU13) await verSiArmarU13Femenino(matchFinalizado);
+  if (esU15) await verSiArmarU15Femenino(matchFinalizado);
+  // U17 queda igual si más adelante lo activás por categoría
+  await verSiArmarU17Femenino(matchFinalizado);
+} catch (advErr) {
+  console.warn("Avance automático falló:", advErr);
+}
+
 
       // 5) Cerrar modal
       closeResultado();
@@ -3590,37 +3602,41 @@ const [u15Pairs, setU15Pairs] = useState([]);
                 {canManage && (
                   <div className="w-full sm:w-auto">
                     <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                      <button
-                        onClick={abrirPOConfig}
-                        className={`${BTN} ${BTN_PRIMARY} ${BTN_FULL} from-indigo-600 to-purple-600`}
-                      >
-                        <IconPlus /> Generar
-                      </button>
+  <button
+    onClick={abrirPOConfig}
+    className={`${BTN} ${BTN_PRIMARY} ${BTN_FULL} from-indigo-600 to-purple-600`}
+  >
+    <IconPlus /> Generar
+  </button>
 
-                      <button
-                        onClick={abrirSembrarU13UIModal}
-                        className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
-                      >
-                        Sembrar U13F
-                      </button>
+  {esU13 && (
+    <button
+      onClick={abrirSembrarU13UIModal}
+      className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+    >
+      Sembrar U13F
+    </button>
+  )}
 
-                      <button
-  onClick={abrirSembrarU15UIModal}
-  className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
->
-  Sembrar U15F
-</button>
+  {esU15 && (
+    <button
+      onClick={abrirSembrarU15UIModal}
+      className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+    >
+      Sembrar U15F
+    </button>
+  )}
 
+  {fasePartidos.length > 0 && (
+    <button
+      onClick={borrarCrucesFaseFinal}
+      className={`${BTN} ${BTN_MUTED} ${BTN_FULL}`}
+    >
+      Borrar cruces
+    </button>
+  )}
+</div>
 
-                      {fasePartidos.length > 0 && (
-                        <button
-                          onClick={borrarCrucesFaseFinal}
-                          className={`${BTN} ${BTN_MUTED} ${BTN_FULL}`}
-                        >
-                          Borrar cruces
-                        </button>
-                      )}
-                    </div>
                   </div>
                 )}
               </div>
