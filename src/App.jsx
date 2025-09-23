@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 
-
 export default function App() {
   const [user, setUser] = useState(null);
 
@@ -36,7 +35,7 @@ export default function App() {
           >
             {/* 👇 Mantiene proporción del archivo (no lo recorta) */}
             <span className='text-xl sm:text-2xl font-bold tracking-tight text-gray-900'>
-              Copa Kenia Comercial Eldorado
+              Copa Kenia Comercial Eldorad
             </span>
           </div>
 

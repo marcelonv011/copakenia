@@ -1,8 +1,8 @@
 // src/routes/Torneo.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { auth, db } from "../firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { auth, db } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -15,120 +15,120 @@ import {
   deleteDoc,
   deleteField,
   setDoc,
-} from "firebase/firestore";
-import { isAdmin } from "../lib/firestore";
+} from 'firebase/firestore';
+import { isAdmin } from '../lib/firestore';
 
 /* ---------------- UI helpers ---------------- */
-const catPillClass = (c = "") =>
-  c?.startsWith("Femenino")
-    ? "bg-pink-100 text-pink-700"
-    : "bg-blue-100 text-blue-700";
+const catPillClass = (c = '') =>
+  c?.startsWith('Femenino')
+    ? 'bg-pink-100 text-pink-700'
+    : 'bg-blue-100 text-blue-700';
 
-function Spinner({ className = "w-4 h-4" }) {
+function Spinner({ className = 'w-4 h-4' }) {
   return (
     <svg
       className={`animate-spin ${className}`}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
+      viewBox='0 0 24 24'
+      aria-hidden='true'
     >
       <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-        fill="none"
+        className='opacity-25'
+        cx='12'
+        cy='12'
+        r='10'
+        stroke='currentColor'
+        strokeWidth='4'
+        fill='none'
       />
       <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+        className='opacity-75'
+        fill='currentColor'
+        d='M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z'
       />
     </svg>
   );
 }
 
 const IconBack = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" {...p}>
-    <path fill="currentColor" d="M15 6l-6 6 6 6" />
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
+    <path fill='currentColor' d='M15 6l-6 6 6 6' />
   </svg>
 );
 const IconEdit = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" {...p}>
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
     <path
-      fill="currentColor"
-      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04l-2.34-2.34a1 1 0 0 0-1.41 0L15.13 6.53l3.75 3.75 1.83-1.83a1 1 0 0 0 0-1.41z"
+      fill='currentColor'
+      d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04l-2.34-2.34a1 1 0 0 0-1.41 0L15.13 6.53l3.75 3.75 1.83-1.83a1 1 0 0 0 0-1.41z'
     />
   </svg>
 );
 const IconTrash = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" {...p}>
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
     <path
-      fill="currentColor"
-      d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+      fill='currentColor'
+      d='M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
     />
   </svg>
 );
 const IconScore = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" {...p}>
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
     <path
-      fill="currentColor"
-      d="M3 5h18v14H3zM5 7h6v2H5zm0 4h6v2H5zm8-4h6v6h-6z"
+      fill='currentColor'
+      d='M3 5h18v14H3zM5 7h6v2H5zm0 4h6v2H5zm8-4h6v6h-6z'
     />
   </svg>
 );
 const IconPlus = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" {...p}>
-    <path fill="currentColor" d="M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2z" />
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
+    <path fill='currentColor' d='M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2z' />
   </svg>
 );
 const IconUpload = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" {...p}>
-    <path fill="currentColor" d="M5 20h14v-2H5v2zm7-18l-5 5h3v6h4V7h3l-5-5z" />
+  <svg viewBox='0 0 24 24' width='18' height='18' {...p}>
+    <path fill='currentColor' d='M5 20h14v-2H5v2zm7-18l-5 5h3v6h4V7h3l-5-5z' />
   </svg>
 );
 
 /* Avatar / EquipoTag */
-const initials = (name = "") =>
+const initials = (name = '') =>
   name
     .trim()
     .split(/\s+/)
     .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() || "")
-    .join("");
+    .map((w) => w[0]?.toUpperCase() || '')
+    .join('');
 const Avatar = ({ name, logoUrl, size = 24 }) =>
   logoUrl ? (
     <img
       src={logoUrl}
       alt={name}
-      className="rounded-full object-cover"
+      className='rounded-full object-cover'
       style={{ width: size, height: size }}
       onError={(e) => {
-        e.currentTarget.style.display = "none";
+        e.currentTarget.style.display = 'none';
       }}
     />
   ) : (
     <div
-      className="rounded-full bg-gray-200 text-gray-700 grid place-items-center font-semibold"
+      className='rounded-full bg-gray-200 text-gray-700 grid place-items-center font-semibold'
       style={{ width: size, height: size }}
     >
       {initials(name)}
     </div>
   );
 const EquipoTag = ({ nombre, logoUrl }) => (
-  <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white">
+  <span className='inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white'>
     <Avatar name={nombre} logoUrl={logoUrl} size={18} />
-    <span className="text-xs">{nombre}</span>
+    <span className='text-xs'>{nombre}</span>
   </span>
 );
 
 /* Normalizar nombre para comparaciones (case/acentos/espacios) */
-const nameKey = (s = "") =>
+const nameKey = (s = '') =>
   s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 
@@ -146,7 +146,7 @@ async function compressImageFileToDataURL(
   file,
   {
     maxSize = 256, // lado máx px (sobra para logos)
-    mimeType = "image/webp", // webp = liviano
+    mimeType = 'image/webp', // webp = liviano
     quality = 0.85,
   } = {}
 ) {
@@ -161,25 +161,25 @@ async function compressImageFileToDataURL(
   const w = Math.max(1, Math.round(img.width * scale));
   const h = Math.max(1, Math.round(img.height * scale));
 
-  const canvas = document.createElement("canvas");
+  const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
 
   try {
     const out = canvas.toDataURL(mimeType, quality);
-    if (!out || out.length < 20) throw new Error("webp falló");
+    if (!out || out.length < 20) throw new Error('webp falló');
     return out;
   } catch {
-    return canvas.toDataURL("image/png");
+    return canvas.toDataURL('image/png');
   }
 }
 
 function dataURLtoBlob(dataURL) {
-  const [head, body] = dataURL.split(",");
-  const mime = head.match(/data:(.*?);base64/)?.[1] || "image/png";
+  const [head, body] = dataURL.split(',');
+  const mime = head.match(/data:(.*?);base64/)?.[1] || 'image/png';
   const binStr = atob(body);
   const len = binStr.length;
   const arr = new Uint8Array(len);
@@ -187,56 +187,56 @@ function dataURLtoBlob(dataURL) {
   return new Blob([arr], { type: mime });
 }
 
-async function uploadToCloudinary(fileOrDataURL, folder = "logos") {
+async function uploadToCloudinary(fileOrDataURL, folder = 'logos') {
   const cloudName = import.meta.env.VITE_CLD_CLOUD_NAME;
   const preset = import.meta.env.VITE_CLD_UPLOAD_PRESET;
   if (!cloudName || !preset) {
-    throw new Error("Cloudinary no está configurado (revisá .env)");
+    throw new Error('Cloudinary no está configurado (revisá .env)');
   }
 
   const form = new FormData();
-  if (typeof fileOrDataURL === "string" && fileOrDataURL.startsWith("data:")) {
-    form.append("file", dataURLtoBlob(fileOrDataURL));
+  if (typeof fileOrDataURL === 'string' && fileOrDataURL.startsWith('data:')) {
+    form.append('file', dataURLtoBlob(fileOrDataURL));
   } else {
-    form.append("file", fileOrDataURL); // File nativo
+    form.append('file', fileOrDataURL); // File nativo
   }
-  form.append("upload_preset", preset);
-  if (folder) form.append("folder", folder);
+  form.append('upload_preset', preset);
+  if (folder) form.append('folder', folder);
 
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
     {
-      method: "POST",
+      method: 'POST',
       body: form,
     }
   );
-  if (!res.ok) throw new Error("Upload falló");
+  if (!res.ok) throw new Error('Upload falló');
   const json = await res.json();
   return json.secure_url; // <- URL pública
 }
 
 /* Fecha/hora */
 function fmtFecha(ts) {
-  if (!ts) return "Sin fecha";
+  if (!ts) return 'Sin fecha';
   const d = ts?.seconds
     ? new Date(ts.seconds * 1000)
     : ts instanceof Date
     ? ts
     : null;
-  if (!d) return "Sin fecha";
+  if (!d) return 'Sin fecha';
   const fecha = d.toLocaleDateString();
-  const hora = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const hora = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `${fecha} · ${hora}`;
 }
 
 /* Devuelve 'YYYY-MM-DDTHH:mm' en HORA LOCAL para inputs datetime-local */
 function toDatetimeLocalValue(d) {
-  if (!(d instanceof Date)) return "";
+  if (!(d instanceof Date)) return '';
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
   return `${y}-${m}-${day}T${hh}:${mm}`;
 }
 
@@ -244,14 +244,14 @@ function toDatetimeLocalValue(d) {
 function ymdLocal(d) {
   // Devuelve 'YYYY-MM-DD' en **hora local**
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 }
 function labelFromYMD(ymd) {
   // ymd = 'YYYY-MM-DD' -> etiqueta local (evitamos parsear UTC)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return "Sin fecha";
-  const [y, m, d] = ymd.split("-").map(Number);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return 'Sin fecha';
+  const [y, m, d] = ymd.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString();
 }
 
@@ -261,7 +261,7 @@ function buildTable(partidosFinalizados, equiposMap) {
   const ensure = (id) =>
     (table[id] ||= {
       id,
-      nombre: equiposMap[id] || "Equipo",
+      nombre: equiposMap[id] || 'Equipo',
       pj: 0,
       pg: 0,
       pp: 0,
@@ -308,16 +308,16 @@ function buildTable(partidosFinalizados, equiposMap) {
 }
 
 /* ---------- Playoffs helpers (NUEVO) ---------- */
-const PO_FASES = ["octavos", "cuartos", "semi", "final"];
+const PO_FASES = ['octavos', 'cuartos', 'semi', 'final'];
 const nextFase = (f) =>
-  f === "octavos"
-    ? "cuartos"
-    : f === "cuartos"
-    ? "semi"
-    : f === "semi"
-    ? "final"
+  f === 'octavos'
+    ? 'cuartos'
+    : f === 'cuartos'
+    ? 'semi'
+    : f === 'semi'
+    ? 'final'
     : null;
-const isPO = (f) => PO_FASES.includes(String(f || ""));
+const isPO = (f) => PO_FASES.includes(String(f || ''));
 
 /** Devuelve id del ganador (no se permiten empates) */
 const ganadorDe = (match, sl, sv) => {
@@ -334,22 +334,22 @@ const perdedorDe = (match, sl, sv) => {
 /* ---------- Button style helpers (global, compacto) ---------- */
 const BTN =
   // móvil: compacto por defecto
-  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-medium " +
-  "shadow-sm ring-1 ring-black/5 transition " +
+  'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-medium ' +
+  'shadow-sm ring-1 ring-black/5 transition ' +
   // desktop: igual o levemente más chico
-  "sm:px-3 sm:py-2 sm:text-sm";
+  'sm:px-3 sm:py-2 sm:text-sm';
 
-const BTN_FULL = "w-full sm:w-auto";
+const BTN_FULL = 'w-full sm:w-auto';
 
-const BTN_SOFT = "bg-white border hover:bg-gray-50 active:bg-gray-100";
+const BTN_SOFT = 'bg-white border hover:bg-gray-50 active:bg-gray-100';
 
 const BTN_PRIMARY =
-  "text-white bg-gradient-to-r from-blue-600 to-indigo-600 sm:hover:from-blue-700 sm:hover:to-indigo-700";
+  'text-white bg-gradient-to-r from-blue-600 to-indigo-600 sm:hover:from-blue-700 sm:hover:to-indigo-700';
 
-const BTN_WARN = "text-white bg-amber-500 sm:hover:bg-amber-600";
-const BTN_DANGER = "text-white bg-red-600 sm:hover:bg-red-700";
-const BTN_MUTED = "bg-gray-100 hover:bg-gray-200";
-const BTN_DARK = "text-white bg-gray-900 sm:hover:bg-black";
+const BTN_WARN = 'text-white bg-amber-500 sm:hover:bg-amber-600';
+const BTN_DANGER = 'text-white bg-red-600 sm:hover:bg-red-700';
+const BTN_MUTED = 'bg-gray-100 hover:bg-gray-200';
+const BTN_DARK = 'text-white bg-gray-900 sm:hover:bg-black';
 
 /* Tarjeta partido (lista) */
 function MatchRow({
@@ -374,45 +374,45 @@ function MatchRow({
   const logoV = equipos.find((e) => e.id === visitanteId)?.logoUrl;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border p-4">
+    <div className='bg-white rounded-2xl shadow-sm border p-4'>
       {/* Cabecera: equipos */}
       {/* Cabecera: equipos + badge interzonal */}
-      <div className="font-semibold text-base sm:text-[1rem]">
-        <div className="sm:flex sm:items-center sm:flex-wrap sm:gap-2">
+      <div className='font-semibold text-base sm:text-[1rem]'>
+        <div className='sm:flex sm:items-center sm:flex-wrap sm:gap-2'>
           {/* Local */}
-          <div className="flex items-center gap-2 min-w-0">
+          <div className='flex items-center gap-2 min-w-0'>
             <Avatar name={equiposMap[localId]} logoUrl={logoL} />
-            <span className="min-w-0 break-words">
-              {equiposMap[localId] || "Local"}
+            <span className='min-w-0 break-words'>
+              {equiposMap[localId] || 'Local'}
             </span>
           </div>
 
           {/* Separador / marcador */}
           {isResult ? (
-            <div className="flex items-center gap-1 my-1 sm:my-0 sm:mx-1">
-              <span className="px-2 py-0.5 rounded bg-gray-100">
-                {typeof scoreLocal === "number" ? scoreLocal : "-"}
+            <div className='flex items-center gap-1 my-1 sm:my-0 sm:mx-1'>
+              <span className='px-2 py-0.5 rounded bg-gray-100'>
+                {typeof scoreLocal === 'number' ? scoreLocal : '-'}
               </span>
-              <span className="text-gray-400">–</span>
-              <span className="px-2 py-0.5 rounded bg-gray-100">
-                {typeof scoreVisitante === "number" ? scoreVisitante : "-"}
+              <span className='text-gray-400'>–</span>
+              <span className='px-2 py-0.5 rounded bg-gray-100'>
+                {typeof scoreVisitante === 'number' ? scoreVisitante : '-'}
               </span>
             </div>
           ) : (
-            <span className="text-gray-400 my-1 sm:my-0 sm:mx-1">vs</span>
+            <span className='text-gray-400 my-1 sm:my-0 sm:mx-1'>vs</span>
           )}
 
           {/* Visitante */}
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="min-w-0 break-words">
-              {equiposMap[visitanteId] || "Visitante"}
+          <div className='flex items-center gap-2 min-w-0'>
+            <span className='min-w-0 break-words'>
+              {equiposMap[visitanteId] || 'Visitante'}
             </span>
             <Avatar name={equiposMap[visitanteId]} logoUrl={logoV} />
           </div>
 
           {/* Badge interzonal (derecha) */}
           {interzonal && (
-            <span className="ml-auto mt-2 sm:mt-0 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow">
+            <span className='ml-auto mt-2 sm:mt-0 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow'>
               Interzonal
             </span>
           )}
@@ -420,18 +420,18 @@ function MatchRow({
       </div>
 
       {/* Meta (solo desktop) */}
-      <div className="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
+      <div className='text-sm text-gray-500 flex items-center gap-2 flex-wrap'>
         <span>
           {fmtFecha(ts)}
-          {cancha ? ` · ${cancha}` : ""}
+          {cancha ? ` · ${cancha}` : ''}
         </span>
 
         {canManage && (
           <button
-            type="button"
+            type='button'
             onClick={onEditMeta}
-            className="text-xs px-2 py-1 rounded-lg border bg-white hover:bg-gray-50"
-            title="Editar fecha y cancha"
+            className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-gray-50'
+            title='Editar fecha y cancha'
           >
             Editar
           </button>
@@ -440,16 +440,16 @@ function MatchRow({
 
       {/* Tops (si existen) */}
       {isResult && (tops?.local?.nombre || tops?.visitante?.nombre) && (
-        <div className="mt-2 text-sm text-gray-700 space-y-1">
+        <div className='mt-2 text-sm text-gray-700 space-y-1'>
           {tops?.local?.nombre && (
             <div>
-              <b>{equiposMap[localId] || "Local"}:</b> {tops.local.nombre} (
+              <b>{equiposMap[localId] || 'Local'}:</b> {tops.local.nombre} (
               {tops.local.puntos ?? 0})
             </div>
           )}
           {tops?.visitante?.nombre && (
             <div>
-              <b>{equiposMap[visitanteId] || "Visitante"}:</b>{" "}
+              <b>{equiposMap[visitanteId] || 'Visitante'}:</b>{' '}
               {tops.visitante.nombre} ({tops.visitante.puntos ?? 0})
             </div>
           )}
@@ -458,21 +458,21 @@ function MatchRow({
 
       {/* Acciones */}
       {canManage && (
-        <div className="flex flex-wrap gap-2 mt-3">
+        <div className='flex flex-wrap gap-2 mt-3'>
           <button
             onClick={onEditScore}
             className={`${BTN} ${isResult ? BTN_WARN : BTN_PRIMARY}`}
-            title={isResult ? "Editar resultado" : "Cargar resultado"}
+            title={isResult ? 'Editar resultado' : 'Cargar resultado'}
           >
             {isResult ? <IconEdit /> : <IconScore />}
-            {isResult ? "Editar" : "Cargar"}
+            {isResult ? 'Editar' : 'Cargar'}
           </button>
 
           {isResult && onRevert && (
             <button
               onClick={onRevert}
               className={`${BTN} ${BTN_MUTED}`}
-              title="Revertir a pendiente"
+              title='Revertir a pendiente'
             >
               Revertir
             </button>
@@ -481,7 +481,7 @@ function MatchRow({
           <button
             onClick={onDelete}
             className={`${BTN} ${BTN_DANGER}`}
-            title="Eliminar partido"
+            title='Eliminar partido'
           >
             <IconTrash />
           </button>
@@ -503,14 +503,14 @@ export default function Torneo() {
   const [equipos, setEquipos] = useState([]);
   // Helper de grupo (usa el state `equipos` del componente)
   const groupOf = (teamId) => {
-    if (!teamId) return "";
-    const g = equipos.find((e) => e.id === teamId)?.grupo || "";
+    if (!teamId) return '';
+    const g = equipos.find((e) => e.id === teamId)?.grupo || '';
     return String(g).toUpperCase().trim();
   };
 
   const [partidos, setPartidos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("fixture");
+  const [tab, setTab] = useState('fixture');
 
   // 👉 Flechas de tabs
   const tabsScrollRef = useRef(null);
@@ -520,22 +520,22 @@ export default function Torneo() {
   /* Resultado (modal) */
   const [openResult, setOpenResult] = useState(false);
   const [editingMatch, setEditingMatch] = useState(null);
-  const [scoreLocal, setScoreLocal] = useState("");
-  const [scoreVisitante, setScoreVisitante] = useState("");
+  const [scoreLocal, setScoreLocal] = useState('');
+  const [scoreVisitante, setScoreVisitante] = useState('');
   const [saving, setSaving] = useState(false);
   // Máximos anotadores
-  const [topLocalName, setTopLocalName] = useState("");
-  const [topLocalPts, setTopLocalPts] = useState("");
-  const [topVisName, setTopVisName] = useState("");
-  const [topVisPts, setTopVisPts] = useState("");
+  const [topLocalName, setTopLocalName] = useState('');
+  const [topLocalPts, setTopLocalPts] = useState('');
+  const [topVisName, setTopVisName] = useState('');
+  const [topVisPts, setTopVisPts] = useState('');
 
   /* Nuevo partido/equipo (modales) */
   const [openMatch, setOpenMatch] = useState(false);
   const [matchForm, setMatchForm] = useState({
-    localId: "",
-    visitanteId: "",
-    fecha: "",
-    cancha: "",
+    localId: '',
+    visitanteId: '',
+    fecha: '',
+    cancha: '',
     interzonal: false,
   });
 
@@ -543,7 +543,7 @@ export default function Torneo() {
   const elegiblesPara = (side) => {
     const inter = matchForm.interzonal;
     const otherId =
-      side === "local" ? matchForm.visitanteId : matchForm.localId;
+      side === 'local' ? matchForm.visitanteId : matchForm.localId;
     const otherGroup = groupOf(otherId); // "A" | "B" | "" (sin grupo)
 
     return equipos
@@ -571,15 +571,15 @@ export default function Torneo() {
   const [openTeam, setOpenTeam] = useState(false);
 
   const [teamForm, setTeamForm] = useState({
-    nombre: "",
-    logoUrl: "",
-    grupo: "",
+    nombre: '',
+    logoUrl: '',
+    grupo: '',
   });
   const newLogoInputRef = useRef(null);
-  const [teamLogoName, setTeamLogoName] = useState("");
+  const [teamLogoName, setTeamLogoName] = useState('');
 
   const [teamUploadBusy, setTeamUploadBusy] = useState(false);
-  const [teamUploadError, setTeamUploadError] = useState("");
+  const [teamUploadError, setTeamUploadError] = useState('');
 
   // --- Editar equipo ---
   const [openEditTeam, setOpenEditTeam] = useState(false);
@@ -589,25 +589,25 @@ export default function Torneo() {
   const requiereInterzonal = gruposDistintos && !matchForm.interzonal;
   const [editingTeam, setEditingTeam] = useState(null); // objeto equipo
   const [editTeamForm, setEditTeamForm] = useState({
-    nombre: "",
-    logoUrl: "",
-    grupo: "",
+    nombre: '',
+    logoUrl: '',
+    grupo: '',
   });
   const editLogoInputRef = useRef(null);
-  const [editLogoName, setEditLogoName] = useState("");
+  const [editLogoName, setEditLogoName] = useState('');
 
   const [editUploadBusy, setEditUploadBusy] = useState(false);
-  const [editUploadError, setEditUploadError] = useState("");
+  const [editUploadError, setEditUploadError] = useState('');
 
   // Mensaje de error (inline en el modal de Editar equipo)
-  const [editTeamError, setEditTeamError] = useState("");
+  const [editTeamError, setEditTeamError] = useState('');
 
   function abrirEditarEquipo(equipo) {
     setEditingTeam(equipo);
     setEditTeamForm({
-      nombre: equipo?.nombre || "",
-      logoUrl: equipo?.logoUrl || "",
-      grupo: (equipo?.grupo || "").toString().toUpperCase(),
+      nombre: equipo?.nombre || '',
+      logoUrl: equipo?.logoUrl || '',
+      grupo: (equipo?.grupo || '').toString().toUpperCase(),
     });
     setOpenEditTeam(true);
   }
@@ -617,16 +617,16 @@ export default function Torneo() {
     if (!canManage || !editingTeam) return;
 
     // limpiar error previo
-    setEditTeamError("");
+    setEditTeamError('');
 
-    const nombre = (editTeamForm.nombre || "").trim();
+    const nombre = (editTeamForm.nombre || '').trim();
     if (!nombre) {
-      setEditTeamError("Poné un nombre de equipo.");
+      setEditTeamError('Poné un nombre de equipo.');
       return;
     }
     const key = nameKey(nombre);
     const existe = equipos.some(
-      (t) => t.id !== editingTeam.id && nameKey(t.nombre || "") === key
+      (t) => t.id !== editingTeam.id && nameKey(t.nombre || '') === key
     );
     if (existe) {
       setEditTeamError(
@@ -636,12 +636,12 @@ export default function Torneo() {
     }
 
     // --- 🔒 Regla: si ya jugó en su grupo actual, no puede cambiar de grupo ---
-    const oldGroup = (editingTeam?.grupo || "").toString().trim().toUpperCase();
-    const newGroup = (editTeamForm.grupo || "").toString().trim().toUpperCase();
+    const oldGroup = (editingTeam?.grupo || '').toString().trim().toUpperCase();
+    const newGroup = (editTeamForm.grupo || '').toString().trim().toUpperCase();
 
     if (oldGroup && newGroup !== oldGroup) {
       const jugoEnSuGrupo = partidos.some((p) => {
-        const g = (p.grupo || "").toString().toUpperCase();
+        const g = (p.grupo || '').toString().toUpperCase();
         const esDelMismoGrupo = g && g === oldGroup;
         const esEsteEquipo =
           p.localId === editingTeam.id || p.visitanteId === editingTeam.id;
@@ -661,21 +661,21 @@ export default function Torneo() {
     const payload = {
       nombre,
       nombreKey: key,
-      logoUrl: (editTeamForm.logoUrl || "").trim(),
+      logoUrl: (editTeamForm.logoUrl || '').trim(),
     };
     if (newGroup) payload.grupo = newGroup;
     else payload.grupo = deleteField(); // quitar grupo si queda vacío
 
     try {
       await updateDoc(
-        doc(db, "torneos", id, "equipos", editingTeam.id),
+        doc(db, 'torneos', id, 'equipos', editingTeam.id),
         payload
       );
       setOpenEditTeam(false);
       setEditingTeam(null);
     } catch (err) {
       console.error(err);
-      setEditTeamError("No se pudo guardar la edición del equipo.");
+      setEditTeamError('No se pudo guardar la edición del equipo.');
     }
   }
 
@@ -686,8 +686,8 @@ export default function Torneo() {
   /* Editar fecha/cancha (modal) */
   const [openEditMeta, setOpenEditMeta] = useState(false);
   const [metaMatch, setMetaMatch] = useState(null);
-  const [metaFecha, setMetaFecha] = useState("");
-  const [metaCancha, setMetaCancha] = useState("");
+  const [metaFecha, setMetaFecha] = useState('');
+  const [metaCancha, setMetaCancha] = useState('');
 
   /* Fase final – Modo (mutuamente excluyente) */
   const [modoFase, setModoFase] = useState(null); // 'copas' | 'playoffs' | null
@@ -713,33 +713,33 @@ export default function Torneo() {
   const [openPOProgram, setOpenPOProgram] = useState(false);
   const [poProgramForm, setPoProgramForm] = useState({
     matchId: null, // si ya existe el partido de la siguiente fase
-    fase: "", // 'cuartos' | 'semi' | 'final'
-    faseLabel: "", // etiqueta linda para el modal
+    fase: '', // 'cuartos' | 'semi' | 'final'
+    faseLabel: '', // etiqueta linda para el modal
     poSlot: null, // slot del partido siguiente
-    localId: "",
-    visitanteId: "",
-    fecha: "", // datetime-local (yyyy-MM-ddTHH:mm)
-    cancha: "",
+    localId: '',
+    visitanteId: '',
+    fecha: '', // datetime-local (yyyy-MM-ddTHH:mm)
+    cancha: '',
   });
 
   // --- Helpers para 3.º puesto + Final (modal doble) ---
-  function sCanchaPreferida(faseKey = "semi") {
+  function sCanchaPreferida(faseKey = 'semi') {
     // Toma la cancha más repetida entre los partidos de esa fase (o alguna disponible)
     const semis = fasePartidos.filter((m) => m.fase === faseKey);
     if (semis.length >= 2) {
-      const c0 = semis[0]?.cancha || "";
-      const c1 = semis[1]?.cancha || "";
+      const c0 = semis[0]?.cancha || '';
+      const c1 = semis[1]?.cancha || '';
       if (c0 && c1 && c0 === c1) return c0;
-      return c0 || c1 || "A definir";
+      return c0 || c1 || 'A definir';
     }
-    return "A definir";
+    return 'A definir';
   }
 
   function abrirProgramarDefinicionesCustom({
-    labelTercer = "3.º puesto",
-    labelFinal = "Final",
-    faseTercer = "tercer",
-    faseFinal = "final",
+    labelTercer = '3.º puesto',
+    labelFinal = 'Final',
+    faseTercer = 'tercer',
+    faseFinal = 'final',
     perd0,
     perd1,
     gan0,
@@ -791,10 +791,10 @@ export default function Torneo() {
     finalExistente,
   }) {
     abrirProgramarDefinicionesCustom({
-      labelTercer: "3.º puesto",
-      labelFinal: "Final",
-      faseTercer: "tercer",
-      faseFinal: "final",
+      labelTercer: '3.º puesto',
+      labelFinal: 'Final',
+      faseTercer: 'tercer',
+      faseFinal: 'final',
       perd0,
       perd1,
       gan0,
@@ -811,52 +811,73 @@ export default function Torneo() {
     const { tercer, final, faseTercerKey, faseFinalKey } = poDefsForm;
 
     const writes = [];
+
+    // Arma el payload base para cualquier partido de definiciones
     const mkPayload = (fase, slot, d) => ({
       localId: d.localId,
       visitanteId: d.visitanteId,
-      estado: "pendiente",
-      fase, // ← usa la fase que venga
-      poSlot: slot,
+      estado: 'pendiente',
+      fase, // ej.: 'tercer-oro', 'final-oro', 'u17-plata', etc.
+      poSlot: slot, // siempre 0 en estas definiciones
       dia: new Date(d.fecha),
-      cancha: (d.cancha || "").trim(),
+      cancha: (d.cancha || '').trim(),
       updatedAt: serverTimestamp(),
     });
 
-    // 3.º puesto
+    // Upsert por (fase, poSlot) para evitar duplicados cuando no hay matchId
+    const upsertByPhaseSlot = async (fase, slot, data) => {
+      const existente = fasePartidos.find(
+        (m) =>
+          String(m.fase) === String(fase) && Number(m.poSlot) === Number(slot)
+      );
+      if (existente) {
+        return setDoc(
+          doc(db, 'torneos', id, 'partidos', existente.id),
+          { ...data, createdAt: existente.createdAt || serverTimestamp() },
+          { merge: true }
+        );
+      }
+      return addDoc(collection(db, 'torneos', id, 'partidos'), {
+        ...data,
+        createdAt: serverTimestamp(),
+      });
+    };
+
+    // ------ 3.º PUESTO ------
     if (tercer.localId && tercer.visitanteId && tercer.fecha && tercer.cancha) {
+      const data = mkPayload(faseTercerKey, 0, tercer);
+
       if (tercer.matchId) {
+        // Si vino un id, hacemos upsert directo a ese doc
         writes.push(
-          updateDoc(
-            doc(db, "torneos", id, "partidos", tercer.matchId),
-            mkPayload(faseTercerKey, 0, tercer)
+          setDoc(
+            doc(db, 'torneos', id, 'partidos', tercer.matchId),
+            { ...data, createdAt: serverTimestamp() },
+            { merge: true }
           )
         );
       } else {
-        writes.push(
-          addDoc(collection(db, "torneos", id, "partidos"), {
-            ...mkPayload(faseTercerKey, 0, tercer),
-            createdAt: serverTimestamp(),
-          })
-        );
+        // Si no hay id, buscamos por (fase,slot) y hacemos upsert
+        writes.push(upsertByPhaseSlot(faseTercerKey, 0, data));
       }
     }
 
-    // Final
+    // ------ FINAL ------
     if (final.localId && final.visitanteId && final.fecha && final.cancha) {
+      const data = mkPayload(faseFinalKey, 0, final);
+
       if (final.matchId) {
+        // Si vino un id, hacemos upsert directo a ese doc
         writes.push(
-          updateDoc(
-            doc(db, "torneos", id, "partidos", final.matchId),
-            mkPayload(faseFinalKey, 0, final)
+          setDoc(
+            doc(db, 'torneos', id, 'partidos', final.matchId),
+            { ...data, createdAt: serverTimestamp() },
+            { merge: true }
           )
         );
       } else {
-        writes.push(
-          addDoc(collection(db, "torneos", id, "partidos"), {
-            ...mkPayload(faseFinalKey, 0, final),
-            createdAt: serverTimestamp(),
-          })
-        );
+        // Si no hay id, buscamos por (fase,slot) y hacemos upsert
+        writes.push(upsertByPhaseSlot(faseFinalKey, 0, data));
       }
     }
 
@@ -865,31 +886,31 @@ export default function Torneo() {
       setOpenPODefs(false);
     } catch (err) {
       console.error(err);
-      alert("No se pudo programar las definiciones.");
+      alert('No se pudo programar las definiciones.');
     }
   }
 
   // Modal doble: 3.º puesto + Final (con fases configurables)
   const [openPODefs, setOpenPODefs] = useState(false);
   const [poDefsForm, setPoDefsForm] = useState({
-    labelTercer: "3.º puesto",
-    labelFinal: "Final",
+    labelTercer: '3.º puesto',
+    labelFinal: 'Final',
     // NUEVO: claves de fase a guardar
-    faseTercerKey: "tercer",
-    faseFinalKey: "final",
+    faseTercerKey: 'tercer',
+    faseFinalKey: 'final',
     tercer: {
       matchId: null,
-      localId: "",
-      visitanteId: "",
-      fecha: "",
-      cancha: "",
+      localId: '',
+      visitanteId: '',
+      fecha: '',
+      cancha: '',
     },
     final: {
       matchId: null,
-      localId: "",
-      visitanteId: "",
-      fecha: "",
-      cancha: "",
+      localId: '',
+      visitanteId: '',
+      fecha: '',
+      cancha: '',
     },
   });
 
@@ -920,10 +941,10 @@ export default function Torneo() {
     );
     const faseLabel =
       {
-        cuartos: "Cuartos de final",
-        semi: "Semifinal",
-        tercer: "3.º puesto",
-        final: "Final",
+        cuartos: 'Cuartos de final',
+        semi: 'Semifinal',
+        tercer: '3.º puesto',
+        final: 'Final',
       }[fase] || fase;
 
     setPoProgramForm({
@@ -936,7 +957,7 @@ export default function Torneo() {
       fecha: fechaExistente
         ? toDatetimeLocalValue(new Date(fechaExistente.seconds * 1000))
         : porDefecto,
-      cancha: canchaExistente || "",
+      cancha: canchaExistente || '',
     });
     setOpenPOProgram(true);
   }
@@ -951,62 +972,66 @@ export default function Torneo() {
 
     try {
       try {
-  const ref = matchId
-    ? doc(db, "torneos", id, "partidos", matchId)
-    : null;
+        const ref = matchId
+          ? doc(db, 'torneos', id, 'partidos', matchId)
+          : null;
 
-  const payload = {
-    localId,
-    visitanteId,
-    dia,
-    cancha: cancha.trim(),
-    updatedAt: serverTimestamp(),
-  };
+        const payload = {
+          localId,
+          visitanteId,
+          dia,
+          cancha: cancha.trim(),
+          updatedAt: serverTimestamp(),
+        };
 
-  if (ref) {
-    try {
-      await updateDoc(ref, payload);
-    } catch (e) {
-      // si el doc no existe todavía en el cliente/servidor, hacemos upsert
-      await setDoc(ref, {
-        ...payload,
-        // preservamos metadatos si el doc no existía
-        estado: "pendiente",
-        fase,
-        poSlot,
-        createdAt: serverTimestamp(),
-      }, { merge: true });
-    }
-  } else {
-    await addDoc(collection(db, "torneos", id, "partidos"), {
-      ...payload,
-      estado: "pendiente",
-      fase,
-      poSlot,
-      createdAt: serverTimestamp(),
-    });
-  }
+        if (ref) {
+          try {
+            await updateDoc(ref, payload);
+          } catch (e) {
+            // si el doc no existe todavía en el cliente/servidor, hacemos upsert
+            await setDoc(
+              ref,
+              {
+                ...payload,
+                // preservamos metadatos si el doc no existía
+                estado: 'pendiente',
+                fase,
+                poSlot,
+                createdAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          }
+        } else {
+          await addDoc(collection(db, 'torneos', id, 'partidos'), {
+            ...payload,
+            estado: 'pendiente',
+            fase,
+            poSlot,
+            createdAt: serverTimestamp(),
+          });
+        }
 
-  // cerrar modal...
-} catch (err) {
-  console.error(err);
-  alert("No se pudo programar el partido.");
-}
+        // cerrar modal...
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo programar el partido.');
+      }
 
       setOpenPOProgram(false);
       setPoProgramForm({
         matchId: null,
-        fase: "",
-        faseLabel: "",
+        fase: '',
+        faseLabel: '',
         poSlot: null,
-        localId: "",
-        visitanteId: "",
-        fecha: "",
-        cancha: "",
+        localId: '',
+        visitanteId: '',
+        fecha: '',
+        cancha: '',
       });
     } catch (err) {
       console.error(err);
-      alert("No se pudo programar el partido."); // si querés, lo cambiamos por banner inline también
+      alert('No se pudo programar el partido.'); // si querés, lo cambiamos por banner inline también
     }
   }
 
@@ -1032,27 +1057,27 @@ export default function Torneo() {
     if (!id) return;
     setLoading(true);
 
-    const unsubTorneo = onSnapshot(doc(db, "torneos", id), (d) =>
+    const unsubTorneo = onSnapshot(doc(db, 'torneos', id), (d) =>
       setTorneo({ id: d.id, ...d.data() })
     );
     const unsubEquipos = onSnapshot(
-      collection(db, "torneos", id, "equipos"),
+      collection(db, 'torneos', id, 'equipos'),
       (snap) => setEquipos(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
     const unsubPartidos = onSnapshot(
-      query(collection(db, "torneos", id, "partidos"), orderBy("dia", "asc")),
+      query(collection(db, 'torneos', id, 'partidos'), orderBy('dia', 'asc')),
       (snap) => {
         setPartidos(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setLoading(false);
       }
     );
     const unsubCopas = onSnapshot(
-      doc(db, "torneos", id, "fases", "copas"),
+      doc(db, 'torneos', id, 'fases', 'copas'),
       (d) => setFaseCopas(d.exists() ? d.data() : null),
       () => setFaseCopas(null)
     );
     const unsubConfig = onSnapshot(
-      doc(db, "torneos", id, "fases", "config"),
+      doc(db, 'torneos', id, 'fases', 'config'),
       (d) => setModoFase(d.exists() ? d.data()?.modo ?? null : null),
       () => setModoFase(null)
     );
@@ -1077,7 +1102,7 @@ export default function Torneo() {
   const gruposActivos = useMemo(() => {
     const set = new Set();
     equipos.forEach((e) => {
-      const g = (e.grupo || "").toString().trim().toUpperCase();
+      const g = (e.grupo || '').toString().trim().toUpperCase();
       if (g) set.add(g);
     });
     return Array.from(set).sort();
@@ -1086,7 +1111,7 @@ export default function Torneo() {
   const equiposPorGrupo = useMemo(() => {
     const map = {};
     equipos.forEach((e) => {
-      const g = (e.grupo || "").toString().trim().toUpperCase() || "";
+      const g = (e.grupo || '').toString().trim().toUpperCase() || '';
       if (!g) return;
       (map[g] ||= []).push(e);
     });
@@ -1097,30 +1122,30 @@ export default function Torneo() {
 
   /* Derivados: fase regular */
   const fixture = useMemo(
-    () => partidos.filter((p) => p.estado !== "finalizado" && !p.fase),
+    () => partidos.filter((p) => p.estado !== 'finalizado' && !p.fase),
     [partidos]
   );
   const resultados = useMemo(
     () =>
       partidos
-        .filter((p) => p.estado === "finalizado" && !p.fase)
+        .filter((p) => p.estado === 'finalizado' && !p.fase)
         .slice()
         .sort((a, b) => (b.dia?.seconds ?? 0) - (a.dia?.seconds ?? 0)),
     [partidos]
   );
 
-  const catKey = (s = "") => s.toString().trim().toLowerCase();
+  const catKey = (s = '') => s.toString().trim().toLowerCase();
   const esU13 = useMemo(
-    () => /\b(u\s*13|u13|sub\s*13)\b/.test(catKey(torneo?.categoria || "")),
+    () => /\b(u\s*13|u13|sub\s*13)\b/.test(catKey(torneo?.categoria || '')),
     [torneo]
   );
   const esU15 = useMemo(
-    () => /\b(u\s*15|u15|sub\s*15)\b/.test(catKey(torneo?.categoria || "")),
+    () => /\b(u\s*15|u15|sub\s*15)\b/.test(catKey(torneo?.categoria || '')),
     [torneo]
   );
 
   const esU17 = useMemo(
-    () => /\b(u\s*17|u17|sub\s*17)\b/.test(catKey(torneo?.categoria || "")),
+    () => /\b(u\s*17|u17|sub\s*17)\b/.test(catKey(torneo?.categoria || '')),
     [torneo]
   );
 
@@ -1129,16 +1154,16 @@ export default function Torneo() {
     const map = {};
     for (const p of resultados) {
       const g = p.interzonal
-        ? "INTERZONAL"
-        : (p.grupo || "").toString().trim().toUpperCase() || "SIN_GRUPO";
+        ? 'INTERZONAL'
+        : (p.grupo || '').toString().trim().toUpperCase() || 'SIN_GRUPO';
       (map[g] ||= []).push(p);
     }
     for (const g in map) {
       map[g].sort((a, b) => (b.dia?.seconds ?? 0) - (a.dia?.seconds ?? 0));
     }
     const orden = Object.keys(map).sort((a, b) => {
-      if (a === "SIN_GRUPO" && b !== "SIN_GRUPO") return 1;
-      if (b === "SIN_GRUPO" && a !== "SIN_GRUPO") return -1;
+      if (a === 'SIN_GRUPO' && b !== 'SIN_GRUPO') return 1;
+      if (b === 'SIN_GRUPO' && a !== 'SIN_GRUPO') return -1;
       return a.localeCompare(b);
     });
     return orden.map((g) => ({ grupo: g, matches: map[g] }));
@@ -1156,7 +1181,7 @@ export default function Torneo() {
     for (const g of gruposActivos) {
       // 1) Partidos dentro del grupo g
       const intra = resultados.filter(
-        (p) => (p.grupo || "").toUpperCase() === g
+        (p) => (p.grupo || '').toUpperCase() === g
       );
 
       // 2) Interzonales donde participa un equipo del grupo g
@@ -1164,10 +1189,10 @@ export default function Torneo() {
         (p) =>
           p.interzonal === true &&
           ((
-            equipos.find((e) => e.id === p.localId)?.grupo || ""
+            equipos.find((e) => e.id === p.localId)?.grupo || ''
           ).toUpperCase() === g ||
             (
-              equipos.find((e) => e.id === p.visitanteId)?.grupo || ""
+              equipos.find((e) => e.id === p.visitanteId)?.grupo || ''
             ).toUpperCase() === g)
       );
 
@@ -1175,7 +1200,7 @@ export default function Torneo() {
       const tablaCompleta = buildTable([...intra, ...inter], equiposMap);
       const idsGrupo = new Set(
         equipos
-          .filter((e) => (e.grupo || "").toUpperCase() === g)
+          .filter((e) => (e.grupo || '').toUpperCase() === g)
           .map((e) => e.id)
       );
       out[g] = tablaCompleta.filter((t) => idsGrupo.has(t.id));
@@ -1187,7 +1212,7 @@ export default function Torneo() {
     const byDate = {};
     for (const p of fixture) {
       const d = p.dia?.seconds ? new Date(p.dia.seconds * 1000) : null;
-      const key = d ? ymdLocal(d) : "Sin fecha"; // 👈 clave en horario local
+      const key = d ? ymdLocal(d) : 'Sin fecha'; // 👈 clave en horario local
       (byDate[key] ||= []).push(p);
     }
     return Object.keys(byDate)
@@ -1204,71 +1229,71 @@ export default function Torneo() {
 
   const fasesOrder = [
     // U13 Femenino
-    "u13b-reclasif", // B4 vs B5 → ganador va a semis PLATA (vs 3A)
-    "oro-semi", // 1A–2B y 1B–2A
-    "plata-semi", // P0: 3A–ganador(B4-B5), P1: 3B–4A
-    "tercer-oro",
-    "final-oro",
-    "tercer-plata",
-    "final-plata",
+    'u13b-reclasif', // B4 vs B5 → ganador va a semis PLATA (vs 3A)
+    'oro-semi', // 1A–2B y 1B–2A
+    'plata-semi', // P0: 3A–ganador(B4-B5), P1: 3B–4A
+    'tercer-oro',
+    'final-oro',
+    'tercer-plata',
+    'final-plata',
 
     // U15 Femenino
-    "u15a-reclasif", // A4 vs A5 → ganador va a semis PLATA (vs 3B)
+    'u15a-reclasif', // A4 vs A5 → ganador va a semis PLATA (vs 3B)
 
     // U17 Femenino
-    "u17-cruces", // 1A–3B, 2A–2B, 1B–3A
-    "u17-oro", // Triangular (ganadores)
-    "u17-plata", // Triangular (perdedores)
+    'u17-cruces', // 1A–3B, 2A–2B, 1B–3A
+    'u17-oro', // Triangular (ganadores)
+    'u17-plata', // Triangular (perdedores)
 
     // Genéricas por compatibilidad
-    "octavos",
-    "cuartos",
-    "semi",
-    "tercer",
-    "final",
-    "otros",
+    'octavos',
+    'cuartos',
+    'semi',
+    'tercer',
+    'final',
+    'otros',
   ];
 
   const faseLabels = {
     // U13 F
-    "u13b-reclasif": "Reclasificación (Zona B)",
-    "oro-semi": "Semifinales (Oro)",
-    "plata-semi": "Semifinales (Plata)",
-    "tercer-oro": "3.º puesto (Oro)",
-    "final-oro": "Final (Oro)",
-    "tercer-plata": "3.º puesto (Plata)",
-    "final-plata": "Final (Plata)",
+    'u13b-reclasif': 'Reclasificación (Zona B)',
+    'oro-semi': 'Semifinales (Oro)',
+    'plata-semi': 'Semifinales (Plata)',
+    'tercer-oro': '3.º puesto (Oro)',
+    'final-oro': 'Final (Oro)',
+    'tercer-plata': '3.º puesto (Plata)',
+    'final-plata': 'Final (Plata)',
 
     // U15 F
-    "u15a-reclasif": "Reclasificación (Zona A)",
+    'u15a-reclasif': 'Reclasificación (Zona A)',
 
     // U17 F
-    "u17-cruces": "Cruces iniciales (A vs B)",
-    "u17-oro": "Triangular Oro",
-    "u17-plata": "Triangular Plata",
+    'u17-cruces': 'Cruces iniciales (A vs B)',
+    'u17-oro': 'Triangular Oro',
+    'u17-plata': 'Triangular Plata',
 
     // Genéricas
-    octavos: "Octavos",
-    cuartos: "Cuartos",
-    semi: "Semifinales",
-    tercer: "3.º puesto",
-    final: "Final",
-    otros: "Otros",
+    octavos: 'Octavos',
+    cuartos: 'Cuartos',
+    semi: 'Semifinales',
+    tercer: '3.º puesto',
+    final: 'Final',
+    otros: 'Otros',
   };
 
   // === ARMADO AUTOMÁTICO U13 FEMENINO ===
   // Se dispara cuando se cierra la reclasificación B (B4 vs B5) o alguna semi.
   const verSiArmarU13Femenino = async (matchCerrado) => {
-    const fase = String(matchCerrado?.fase || "");
+    const fase = String(matchCerrado?.fase || '');
     const cerr = (m) =>
-      m?.estado === "finalizado" &&
+      m?.estado === 'finalizado' &&
       Number.isFinite(m?.scoreLocal) &&
       Number.isFinite(m?.scoreVisitante) &&
       m.scoreLocal !== m.scoreVisitante;
 
     // --- RECLASIF B (B4 vs B5) -> crea semi PLATA (slot 0): 3A vs ganador ---
-    if (fase === "u13b-reclasif" && cerr(matchCerrado)) {
-      const topA = (posicionesPorGrupo?.["A"] || []).map((t) => t.id);
+    if (fase === 'u13b-reclasif' && cerr(matchCerrado)) {
+      const topA = (posicionesPorGrupo?.['A'] || []).map((t) => t.id);
       const A3 = topA[2];
       if (!A3) return; // aún no se puede (faltan datos para A3)
 
@@ -1279,25 +1304,25 @@ export default function Torneo() {
 
       // ¿ya existe la semi slot 0? (solo para conservar fecha/cancha si ya estaba)
       const ya = fasePartidos.find(
-        (m) => m.fase === "plata-semi" && m.poSlot === 0
+        (m) => m.fase === 'plata-semi' && m.poSlot === 0
       );
 
       // Payload base
       const payload = {
         localId: A3,
         visitanteId: ganadorR1,
-        estado: "pendiente",
-        fase: "plata-semi",
+        estado: 'pendiente',
+        fase: 'plata-semi',
         poSlot: 0,
         dia: ya?.dia?.seconds
           ? new Date(ya.dia.seconds * 1000)
           : new Date(Date.now() + 60 * 60 * 1000),
-        cancha: ya?.cancha || "",
+        cancha: ya?.cancha || '',
         updatedAt: serverTimestamp(),
       };
 
       // Id fijo con prefijo U13 para evitar cualquier choque con U15
-      const semi0Ref = doc(db, "torneos", id, "partidos", "u13-plata-semi-0");
+      const semi0Ref = doc(db, 'torneos', id, 'partidos', 'u13-plata-semi-0');
       await setDoc(
         semi0Ref,
         {
@@ -1308,22 +1333,22 @@ export default function Torneo() {
       );
     }
     // --- Semis ORO -> al cerrar ambas, abrir modal (3.º Oro + Final Oro)
-    if (fase === "oro-semi" && cerr(matchCerrado)) {
+    if (fase === 'oro-semi' && cerr(matchCerrado)) {
       const merged = fasePartidos.map((m) =>
         m.id === matchCerrado.id
           ? {
               ...m,
-              estado: "finalizado",
+              estado: 'finalizado',
               scoreLocal: matchCerrado.scoreLocal,
               scoreVisitante: matchCerrado.scoreVisitante,
             }
           : m
       );
       const semis = merged.filter(
-        (m) => m.fase === "oro-semi" && Number.isFinite(m.poSlot)
+        (m) => m.fase === 'oro-semi' && Number.isFinite(m.poSlot)
       );
       const cerrada = (m) =>
-        m.estado === "finalizado" &&
+        m.estado === 'finalizado' &&
         Number.isFinite(m.scoreLocal) &&
         Number.isFinite(m.scoreVisitante) &&
         m.scoreLocal !== m.scoreVisitante;
@@ -1343,15 +1368,15 @@ export default function Torneo() {
           s1.scoreLocal > s1.scoreVisitante ? s1.visitanteId : s1.localId;
 
         const tercerExistente =
-          merged.find((m) => m.fase === "tercer-oro" && m.poSlot === 0) || null;
+          merged.find((m) => m.fase === 'tercer-oro' && m.poSlot === 0) || null;
         const finalExistente =
-          merged.find((m) => m.fase === "final-oro" && m.poSlot === 0) || null;
+          merged.find((m) => m.fase === 'final-oro' && m.poSlot === 0) || null;
 
         abrirProgramarDefinicionesCustom({
-          labelTercer: "3.º puesto (Oro)",
-          labelFinal: "Final (Oro)",
-          faseTercer: "tercer-oro",
-          faseFinal: "final-oro",
+          labelTercer: '3.º puesto (Oro)',
+          labelFinal: 'Final (Oro)',
+          faseTercer: 'tercer-oro',
+          faseFinal: 'final-oro',
           perd0,
           perd1,
           gan0,
@@ -1363,22 +1388,22 @@ export default function Torneo() {
     }
 
     // --- Semis PLATA -> al cerrar ambas, abrir modal (3.º Plata + Final Plata)
-    if (fase === "plata-semi" && cerr(matchCerrado)) {
+    if (fase === 'plata-semi' && cerr(matchCerrado)) {
       const merged = fasePartidos.map((m) =>
         m.id === matchCerrado.id
           ? {
               ...m,
-              estado: "finalizado",
+              estado: 'finalizado',
               scoreLocal: matchCerrado.scoreLocal,
               scoreVisitante: matchCerrado.scoreVisitante,
             }
           : m
       );
       const semis = merged.filter(
-        (m) => m.fase === "plata-semi" && Number.isFinite(m.poSlot)
+        (m) => m.fase === 'plata-semi' && Number.isFinite(m.poSlot)
       );
       const cerrada = (m) =>
-        m.estado === "finalizado" &&
+        m.estado === 'finalizado' &&
         Number.isFinite(m.scoreLocal) &&
         Number.isFinite(m.scoreVisitante) &&
         m.scoreLocal !== m.scoreVisitante;
@@ -1398,17 +1423,17 @@ export default function Torneo() {
           s1.scoreLocal > s1.scoreVisitante ? s1.visitanteId : s1.localId;
 
         const tercerExistente =
-          merged.find((m) => m.fase === "tercer-plata" && m.poSlot === 0) ||
+          merged.find((m) => m.fase === 'tercer-plata' && m.poSlot === 0) ||
           null;
         const finalExistente =
-          merged.find((m) => m.fase === "final-plata" && m.poSlot === 0) ||
+          merged.find((m) => m.fase === 'final-plata' && m.poSlot === 0) ||
           null;
 
         abrirProgramarDefinicionesCustom({
-          labelTercer: "3.º puesto (Plata)",
-          labelFinal: "Final (Plata)",
-          faseTercer: "tercer-plata",
-          faseFinal: "final-plata",
+          labelTercer: '3.º puesto (Plata)',
+          labelFinal: 'Final (Plata)',
+          faseTercer: 'tercer-plata',
+          faseFinal: 'final-plata',
           perd0,
           perd1,
           gan0,
@@ -1423,15 +1448,15 @@ export default function Torneo() {
   // === ARMADO AUTOMÁTICO U15 FEMENINO ===
   // RECLASIF A (A4 vs A5) -> crea semi PLATA (slot 0): 3B vs ganador
   const verSiArmarU15Femenino = async (matchCerrado) => {
-    const fase = String(matchCerrado?.fase || "");
+    const fase = String(matchCerrado?.fase || '');
     const cerr = (m) =>
-      m?.estado === "finalizado" &&
+      m?.estado === 'finalizado' &&
       Number.isFinite(m?.scoreLocal) &&
       Number.isFinite(m?.scoreVisitante) &&
       m.scoreLocal !== m.scoreVisitante;
 
-    if (fase === "u15a-reclasif" && cerr(matchCerrado)) {
-      const topB = (posicionesPorGrupo?.["B"] || []).map((t) => t.id);
+    if (fase === 'u15a-reclasif' && cerr(matchCerrado)) {
+      const topB = (posicionesPorGrupo?.['B'] || []).map((t) => t.id);
       const B3 = topB[2];
       if (!B3) return;
 
@@ -1442,24 +1467,24 @@ export default function Torneo() {
 
       // ¿ya existe la semi slot 0? (solo para conservar fecha/cancha si ya estaba)
       const ya = fasePartidos.find(
-        (m) => m.fase === "plata-semi" && m.poSlot === 0
+        (m) => m.fase === 'plata-semi' && m.poSlot === 0
       );
 
       const payload = {
         localId: B3,
         visitanteId: ganadorR1A,
-        estado: "pendiente",
-        fase: "plata-semi",
+        estado: 'pendiente',
+        fase: 'plata-semi',
         poSlot: 0,
         dia: ya?.dia?.seconds
           ? new Date(ya.dia.seconds * 1000)
           : new Date(Date.now() + 60 * 60 * 1000),
-        cancha: ya?.cancha || "",
+        cancha: ya?.cancha || '',
         updatedAt: serverTimestamp(),
       };
 
       // Id fijo con prefijo U15 → operación idempotente (evita duplicados)
-      const semi0Ref = doc(db, "torneos", id, "partidos", "u15-plata-semi-0");
+      const semi0Ref = doc(db, 'torneos', id, 'partidos', 'u15-plata-semi-0');
       await setDoc(
         semi0Ref,
         {
@@ -1477,435 +1502,439 @@ export default function Torneo() {
   //   ORO:   u17-oro-0, u17-oro-1, u17-oro-2
   //   PLATA: u17-plata-0, u17-plata-1, u17-plata-2
   // === ARMADO AUTOMÁTICO U17 FEMENINO (REEMPLAZAR COMPLETO) ===
-// === ARMADO AUTOMÁTICO U17 FEMENINO (versión con modal doble OR0+PL0) ===
-const verSiArmarU17Femenino = async (matchCerrado) => {
-  const fase = String(matchCerrado?.fase || "");
-  const cerr = (m) =>
-    m?.estado === "finalizado" &&
-    Number.isFinite(m?.scoreLocal) &&
-    Number.isFinite(m?.scoreVisitante) &&
-    m.scoreLocal !== m.scoreVisitante;
+  // === ARMADO AUTOMÁTICO U17 FEMENINO (versión con modal doble OR0+PL0) ===
+  const verSiArmarU17Femenino = async (matchCerrado) => {
+    const fase = String(matchCerrado?.fase || '');
+    const cerr = (m) =>
+      m?.estado === 'finalizado' &&
+      Number.isFinite(m?.scoreLocal) &&
+      Number.isFinite(m?.scoreVisitante) &&
+      m.scoreLocal !== m.scoreVisitante;
 
-  // fusionamos el partido recién cerrado sobre fasePartidos en memoria
-  const merged = fasePartidos.map((m) =>
-    m.id === matchCerrado.id
-      ? {
-          ...m,
-          estado: "finalizado",
-          scoreLocal: matchCerrado.scoreLocal,
-          scoreVisitante: matchCerrado.scoreVisitante,
+    // fusionamos el partido recién cerrado sobre fasePartidos en memoria
+    const merged = fasePartidos.map((m) =>
+      m.id === matchCerrado.id
+        ? {
+            ...m,
+            estado: 'finalizado',
+            scoreLocal: matchCerrado.scoreLocal,
+            scoreVisitante: matchCerrado.scoreVisitante,
+          }
+        : m
+    );
+
+    // helpers
+    const ganador = (m) =>
+      m.scoreLocal > m.scoreVisitante ? m.localId : m.visitanteId;
+    const perdedor = (m) =>
+      m.scoreLocal > m.scoreVisitante ? m.visitanteId : m.localId;
+
+    const byId = (idStr) => merged.find((x) => x.id === idStr) || null;
+
+    // cancha "preferida" de una fase: si dos usan la misma, tomamos esa; sino la 1ª disponible
+    const canchaPreferida = (faseKey) => {
+      const ms = merged.filter((m) => m.fase === faseKey);
+      if (!ms.length) return 'A definir';
+      const c0 = ms[0]?.cancha || '';
+      const c1 = ms[1]?.cancha || '';
+      if (c0 && c1 && c0 === c1) return c0;
+      return c0 || c1 || 'A definir';
+    };
+
+    // ---------- A) SOLO CUANDO SE CIERRA UN CRUCE: armar OR0 y PL0 ----------
+    if (fase === 'u17-cruces' && cerr(matchCerrado)) {
+      try {
+        const cruces = merged
+          .filter((m) => m.fase === 'u17-cruces')
+          .filter((m) => Number.isFinite(m.poSlot))
+          .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
+
+        if (cruces.length === 3 && cruces.every(cerr)) {
+          const W = [
+            ganador(cruces[0]),
+            ganador(cruces[1]),
+            ganador(cruces[2]),
+          ];
+          const L = [
+            perdedor(cruces[0]),
+            perdedor(cruces[1]),
+            perdedor(cruces[2]),
+          ];
+
+          // ---------- ORO: OR0 ----------
+          const OR0id = 'u17-oro-0';
+          const OR0ex = byId(OR0id);
+          await setDoc(
+            doc(db, 'torneos', id, 'partidos', OR0id),
+            {
+              localId: W[0],
+              visitanteId: W[1], // determinista W0 vs W1
+              estado:
+                OR0ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+              fase: 'u17-oro',
+              poSlot: 0,
+              dia: OR0ex?.dia?.seconds
+                ? new Date(OR0ex.dia.seconds * 1000)
+                : new Date(Date.now() + 60 * 60 * 1000),
+              cancha: OR0ex?.cancha || canchaPreferida('u17-cruces'),
+              updatedAt: serverTimestamp(),
+              ...(OR0ex ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          );
+
+          // ---------- PLATA: PL0 ----------
+          const PL0id = 'u17-plata-0';
+          const PL0ex = byId(PL0id);
+          await setDoc(
+            doc(db, 'torneos', id, 'partidos', PL0id),
+            {
+              localId: L[0],
+              visitanteId: L[1],
+              estado:
+                PL0ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+              fase: 'u17-plata',
+              poSlot: 0,
+              dia: PL0ex?.dia?.seconds
+                ? new Date(PL0ex.dia.seconds * 1000)
+                : new Date(Date.now() + 2 * 60 * 60 * 1000),
+              cancha: PL0ex?.cancha || canchaPreferida('u17-cruces'),
+              updatedAt: serverTimestamp(),
+              ...(PL0ex ? {} : { createdAt: serverTimestamp() }),
+            },
+            { merge: true }
+          );
+
+          // ---------- Placeholders OR1/OR2 y PL1/PL2 (sin rivales aún) ----------
+          const OR1id = 'u17-oro-1';
+          const OR2id = 'u17-oro-2';
+          const OR1ex = byId(OR1id);
+          const OR2ex = byId(OR2id);
+
+          await Promise.all([
+            setDoc(
+              doc(db, 'torneos', id, 'partidos', OR1id),
+              {
+                estado:
+                  OR1ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+                fase: 'u17-oro',
+                poSlot: 1,
+                dia: OR1ex?.dia?.seconds
+                  ? new Date(OR1ex.dia.seconds * 1000)
+                  : new Date(Date.now() + 3 * 60 * 60 * 1000),
+                cancha: OR1ex?.cancha || canchaPreferida('u17-oro'),
+                updatedAt: serverTimestamp(),
+                ...(OR1ex ? {} : { createdAt: serverTimestamp() }),
+              },
+              { merge: true }
+            ),
+            setDoc(
+              doc(db, 'torneos', id, 'partidos', OR2id),
+              {
+                estado:
+                  OR2ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+                fase: 'u17-oro',
+                poSlot: 2,
+                dia: OR2ex?.dia?.seconds
+                  ? new Date(OR2ex.dia.seconds * 1000)
+                  : new Date(Date.now() + 4 * 60 * 60 * 1000),
+                cancha: OR2ex?.cancha || canchaPreferida('u17-oro'),
+                updatedAt: serverTimestamp(),
+                ...(OR2ex ? {} : { createdAt: serverTimestamp() }),
+              },
+              { merge: true }
+            ),
+          ]);
+
+          const PL1id = 'u17-plata-1';
+          const PL2id = 'u17-plata-2';
+          const PL1ex = byId(PL1id);
+          const PL2ex = byId(PL2id);
+
+          await Promise.all([
+            setDoc(
+              doc(db, 'torneos', id, 'partidos', PL1id),
+              {
+                estado:
+                  PL1ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+                fase: 'u17-plata',
+                poSlot: 1,
+                dia: PL1ex?.dia?.seconds
+                  ? new Date(PL1ex.dia.seconds * 1000)
+                  : new Date(Date.now() + 3 * 60 * 60 * 1000),
+                cancha: PL1ex?.cancha || canchaPreferida('u17-plata'),
+                updatedAt: serverTimestamp(),
+                ...(PL1ex ? {} : { createdAt: serverTimestamp() }),
+              },
+              { merge: true }
+            ),
+            setDoc(
+              doc(db, 'torneos', id, 'partidos', PL2id),
+              {
+                estado:
+                  PL2ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+                fase: 'u17-plata',
+                poSlot: 2,
+                dia: PL2ex?.dia?.seconds
+                  ? new Date(PL2ex.dia.seconds * 1000)
+                  : new Date(Date.now() + 4 * 60 * 60 * 1000),
+                cancha: PL2ex?.cancha || canchaPreferida('u17-plata'),
+                updatedAt: serverTimestamp(),
+                ...(PL2ex ? {} : { createdAt: serverTimestamp() }),
+              },
+              { merge: true }
+            ),
+          ]);
+
+          // ✅ Abrir UN SOLO modal (doble) para programar PL0 + OR0 juntos
+          abrirProgramarDefinicionesCustom({
+            labelTercer: 'U17 - Plata (R1)',
+            labelFinal: 'U17 - Oro (R1)',
+            faseTercer: 'u17-plata',
+            faseFinal: 'u17-oro',
+            // partidos
+            perd0: L[0],
+            perd1: L[1],
+            gan0: W[0],
+            gan1: W[1],
+            // pasar existentes para conservar fecha/cancha si ya estaban
+            tercerExistente: { id: PL0id, ...(PL0ex || {}) },
+            finalExistente: { id: OR0id, ...(OR0ex || {}) },
+          });
         }
-      : m
-  );
+      } catch (e) {
+        console.warn('U17F: no se pudo armar OR0/PL0:', e);
+      }
+    }
 
-  // helpers
-  const ganador = (m) =>
-    m.scoreLocal > m.scoreVisitante ? m.localId : m.visitanteId;
-  const perdedor = (m) =>
-    m.scoreLocal > m.scoreVisitante ? m.visitanteId : m.localId;
+    // ---------- B) Triangular ORO ----------
+    if (fase === 'u17-oro' && cerr(matchCerrado)) {
+      const OR0id = 'u17-oro-0';
+      const OR1id = 'u17-oro-1';
+      const OR2id = 'u17-oro-2';
 
-  const byId = (idStr) => merged.find((x) => x.id === idStr) || null;
+      // al cerrar OR0 -> OR1 = perdedor de OR0 vs el que no jugó
+      if (matchCerrado.id === OR0id) {
+        const cruces = merged
+          .filter((m) => m.fase === 'u17-cruces')
+          .filter(cerr)
+          .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
+        if (cruces.length !== 3) return;
 
-  // cancha "preferida" de una fase: si dos usan la misma, tomamos esa; sino la 1ª disponible
-  const canchaPreferida = (faseKey) => {
-    const ms = merged.filter((m) => m.fase === faseKey);
-    if (!ms.length) return "A definir";
-    const c0 = ms[0]?.cancha || "";
-    const c1 = ms[1]?.cancha || "";
-    if (c0 && c1 && c0 === c1) return c0;
-    return c0 || c1 || "A definir";
-  };
-
-  // ---------- A) SOLO CUANDO SE CIERRA UN CRUCE: armar OR0 y PL0 ----------
-  if (fase === "u17-cruces" && cerr(matchCerrado)) {
-    try {
-      const cruces = merged
-        .filter((m) => m.fase === "u17-cruces")
-        .filter((m) => Number.isFinite(m.poSlot))
-        .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
-
-      if (cruces.length === 3 && cruces.every(cerr)) {
         const W = [ganador(cruces[0]), ganador(cruces[1]), ganador(cruces[2])];
+
+        const loseOR0 =
+          matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+            ? matchCerrado.visitanteId
+            : matchCerrado.localId;
+
+        const yaJugaron = new Set([
+          matchCerrado.localId,
+          matchCerrado.visitanteId,
+        ]);
+        const W2 = W.find((x) => !yaJugaron.has(x));
+        if (!W2) return;
+
+        const OR1ex = byId(OR1id);
+        await setDoc(
+          doc(db, 'torneos', id, 'partidos', OR1id),
+          {
+            localId: loseOR0,
+            visitanteId: W2,
+            estado: OR1ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+            fase: 'u17-oro',
+            poSlot: 1,
+            dia: OR1ex?.dia?.seconds
+              ? new Date(OR1ex.dia.seconds * 1000)
+              : new Date(Date.now() + 3 * 60 * 60 * 1000),
+            cancha: OR1ex?.cancha || canchaPreferida('u17-oro'),
+            updatedAt: serverTimestamp(),
+            ...(OR1ex ? {} : { createdAt: serverTimestamp() }),
+          },
+          { merge: true }
+        );
+
+        // 👉 Podés mantener este modal simple (OR1) o unificar con otro si preferís
+        abrirProgramarSiguiente({
+          matchId: OR1id,
+          fase: 'u17-oro',
+          poSlot: 1,
+          localId: loseOR0,
+          visitanteId: W2,
+          fechaExistente: OR1ex?.dia,
+          canchaExistente: OR1ex?.cancha,
+        });
+
+        return;
+      }
+
+      // al cerrar OR1 -> OR2 (final) = ganador OR0 vs ganador OR1
+      if (matchCerrado.id === OR1id) {
+        const OR0 = byId(OR0id);
+        if (!OR0 || !cerr(OR0)) return;
+
+        const W0 = ganador(OR0);
+        const W1 =
+          matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+            ? matchCerrado.localId
+            : matchCerrado.visitanteId;
+
+        const OR2ex = byId(OR2id);
+        await setDoc(
+          doc(db, 'torneos', id, 'partidos', OR2id),
+          {
+            localId: W0,
+            visitanteId: W1,
+            estado: OR2ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+            fase: 'u17-oro',
+            poSlot: 2,
+            dia: OR2ex?.dia?.seconds
+              ? new Date(OR2ex.dia.seconds * 1000)
+              : new Date(Date.now() + 4 * 60 * 60 * 1000),
+            cancha: OR2ex?.cancha || canchaPreferida('u17-oro'),
+            updatedAt: serverTimestamp(),
+            ...(OR2ex ? {} : { createdAt: serverTimestamp() }),
+          },
+          { merge: true }
+        );
+
+        abrirProgramarSiguiente({
+          matchId: OR2id,
+          fase: 'u17-oro',
+          poSlot: 2,
+          localId: W0,
+          visitanteId: W1,
+          fechaExistente: OR2ex?.dia,
+          canchaExistente: OR2ex?.cancha,
+        });
+
+        return;
+      }
+    }
+
+    // ---------- C) Triangular PLATA ----------
+    if (fase === 'u17-plata' && cerr(matchCerrado)) {
+      const PL0id = 'u17-plata-0';
+      const PL1id = 'u17-plata-1';
+      const PL2id = 'u17-plata-2';
+
+      // al cerrar PL0 -> PL1 = perdedor de PL0 vs el que no jugó (entre perdedores)
+      if (matchCerrado.id === PL0id) {
+        const cruces = merged
+          .filter((m) => m.fase === 'u17-cruces')
+          .filter(cerr)
+          .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
+        if (cruces.length !== 3) return;
+
         const L = [
           perdedor(cruces[0]),
           perdedor(cruces[1]),
           perdedor(cruces[2]),
         ];
 
-        // ---------- ORO: OR0 ----------
-        const OR0id = "u17-oro-0";
-        const OR0ex = byId(OR0id);
-        await setDoc(
-          doc(db, "torneos", id, "partidos", OR0id),
-          {
-            localId: W[0],
-            visitanteId: W[1], // determinista W0 vs W1
-            estado: OR0ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-            fase: "u17-oro",
-            poSlot: 0,
-            dia: OR0ex?.dia?.seconds
-              ? new Date(OR0ex.dia.seconds * 1000)
-              : new Date(Date.now() + 60 * 60 * 1000),
-            cancha: OR0ex?.cancha || canchaPreferida("u17-cruces"),
-            updatedAt: serverTimestamp(),
-            ...(OR0ex ? {} : { createdAt: serverTimestamp() }),
-          },
-          { merge: true }
-        );
+        const losePL0 =
+          matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+            ? matchCerrado.visitanteId
+            : matchCerrado.localId;
 
-        // ---------- PLATA: PL0 ----------
-        const PL0id = "u17-plata-0";
-        const PL0ex = byId(PL0id);
-        await setDoc(
-          doc(db, "torneos", id, "partidos", PL0id),
-          {
-            localId: L[0],
-            visitanteId: L[1],
-            estado: PL0ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-            fase: "u17-plata",
-            poSlot: 0,
-            dia: PL0ex?.dia?.seconds
-              ? new Date(PL0ex.dia.seconds * 1000)
-              : new Date(Date.now() + 2 * 60 * 60 * 1000),
-            cancha: PL0ex?.cancha || canchaPreferida("u17-cruces"),
-            updatedAt: serverTimestamp(),
-            ...(PL0ex ? {} : { createdAt: serverTimestamp() }),
-          },
-          { merge: true }
-        );
-
-        // ---------- Placeholders OR1/OR2 y PL1/PL2 (sin rivales aún) ----------
-        const OR1id = "u17-oro-1";
-        const OR2id = "u17-oro-2";
-        const OR1ex = byId(OR1id);
-        const OR2ex = byId(OR2id);
-
-        await Promise.all([
-          setDoc(
-            doc(db, "torneos", id, "partidos", OR1id),
-            {
-              estado:
-                OR1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-              fase: "u17-oro",
-              poSlot: 1,
-              dia: OR1ex?.dia?.seconds
-                ? new Date(OR1ex.dia.seconds * 1000)
-                : new Date(Date.now() + 3 * 60 * 60 * 1000),
-              cancha: OR1ex?.cancha || canchaPreferida("u17-oro"),
-              updatedAt: serverTimestamp(),
-              ...(OR1ex ? {} : { createdAt: serverTimestamp() }),
-            },
-            { merge: true }
-          ),
-          setDoc(
-            doc(db, "torneos", id, "partidos", OR2id),
-            {
-              estado:
-                OR2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-              fase: "u17-oro",
-              poSlot: 2,
-              dia: OR2ex?.dia?.seconds
-                ? new Date(OR2ex.dia.seconds * 1000)
-                : new Date(Date.now() + 4 * 60 * 60 * 1000),
-              cancha: OR2ex?.cancha || canchaPreferida("u17-oro"),
-              updatedAt: serverTimestamp(),
-              ...(OR2ex ? {} : { createdAt: serverTimestamp() }),
-            },
-            { merge: true }
-          ),
+        const yaJugaron = new Set([
+          matchCerrado.localId,
+          matchCerrado.visitanteId,
         ]);
+        const L2 = L.find((x) => !yaJugaron.has(x));
+        if (!L2) return;
 
-        const PL1id = "u17-plata-1";
-        const PL2id = "u17-plata-2";
         const PL1ex = byId(PL1id);
-        const PL2ex = byId(PL2id);
+        await setDoc(
+          doc(db, 'torneos', id, 'partidos', PL1id),
+          {
+            localId: losePL0,
+            visitanteId: L2,
+            estado: PL1ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+            fase: 'u17-plata',
+            poSlot: 1,
+            dia: PL1ex?.dia?.seconds
+              ? new Date(PL1ex.dia.seconds * 1000)
+              : new Date(Date.now() + 3 * 60 * 60 * 1000),
+            cancha: PL1ex?.cancha || canchaPreferida('u17-plata'),
+            updatedAt: serverTimestamp(),
+            ...(PL1ex ? {} : { createdAt: serverTimestamp() }),
+          },
+          { merge: true }
+        );
 
-        await Promise.all([
-          setDoc(
-            doc(db, "torneos", id, "partidos", PL1id),
-            {
-              estado:
-                PL1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-              fase: "u17-plata",
-              poSlot: 1,
-              dia: PL1ex?.dia?.seconds
-                ? new Date(PL1ex.dia.seconds * 1000)
-                : new Date(Date.now() + 3 * 60 * 60 * 1000),
-              cancha: PL1ex?.cancha || canchaPreferida("u17-plata"),
-              updatedAt: serverTimestamp(),
-              ...(PL1ex ? {} : { createdAt: serverTimestamp() }),
-            },
-            { merge: true }
-          ),
-          setDoc(
-            doc(db, "torneos", id, "partidos", PL2id),
-            {
-              estado:
-                PL2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-              fase: "u17-plata",
-              poSlot: 2,
-              dia: PL2ex?.dia?.seconds
-                ? new Date(PL2ex.dia.seconds * 1000)
-                : new Date(Date.now() + 4 * 60 * 60 * 1000),
-              cancha: PL2ex?.cancha || canchaPreferida("u17-plata"),
-              updatedAt: serverTimestamp(),
-              ...(PL2ex ? {} : { createdAt: serverTimestamp() }),
-            },
-            { merge: true }
-          ),
-        ]);
-
-        // ✅ Abrir UN SOLO modal (doble) para programar PL0 + OR0 juntos
-        abrirProgramarDefinicionesCustom({
-          labelTercer: "U17 - Plata (R1)",
-          labelFinal: "U17 - Oro (R1)",
-          faseTercer: "u17-plata",
-          faseFinal: "u17-oro",
-          // partidos
-          perd0: L[0],
-          perd1: L[1],
-          gan0: W[0],
-          gan1: W[1],
-          // pasar existentes para conservar fecha/cancha si ya estaban
-          tercerExistente: PL0ex ? { id: PL0id, ...PL0ex } : null,
-          finalExistente: OR0ex ? { id: OR0id, ...OR0ex } : null,
-        });
-      }
-    } catch (e) {
-      console.warn("U17F: no se pudo armar OR0/PL0:", e);
-    }
-  }
-
-  // ---------- B) Triangular ORO ----------
-  if (fase === "u17-oro" && cerr(matchCerrado)) {
-    const OR0id = "u17-oro-0";
-    const OR1id = "u17-oro-1";
-    const OR2id = "u17-oro-2";
-
-    // al cerrar OR0 -> OR1 = perdedor de OR0 vs el que no jugó
-    if (matchCerrado.id === OR0id) {
-      const cruces = merged
-        .filter((m) => m.fase === "u17-cruces")
-        .filter(cerr)
-        .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
-      if (cruces.length !== 3) return;
-
-      const W = [ganador(cruces[0]), ganador(cruces[1]), ganador(cruces[2])];
-
-      const loseOR0 =
-        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
-          ? matchCerrado.visitanteId
-          : matchCerrado.localId;
-
-      const yaJugaron = new Set([
-        matchCerrado.localId,
-        matchCerrado.visitanteId,
-      ]);
-      const W2 = W.find((x) => !yaJugaron.has(x));
-      if (!W2) return;
-
-      const OR1ex = byId(OR1id);
-      await setDoc(
-        doc(db, "torneos", id, "partidos", OR1id),
-        {
-          localId: loseOR0,
-          visitanteId: W2,
-          estado: OR1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-          fase: "u17-oro",
+        abrirProgramarSiguiente({
+          matchId: PL1id,
+          fase: 'u17-plata',
           poSlot: 1,
-          dia: OR1ex?.dia?.seconds
-            ? new Date(OR1ex.dia.seconds * 1000)
-            : new Date(Date.now() + 3 * 60 * 60 * 1000),
-          cancha: OR1ex?.cancha || canchaPreferida("u17-oro"),
-          updatedAt: serverTimestamp(),
-          ...(OR1ex ? {} : { createdAt: serverTimestamp() }),
-        },
-        { merge: true }
-      );
-
-      // 👉 Podés mantener este modal simple (OR1) o unificar con otro si preferís
-      abrirProgramarSiguiente({
-        matchId: OR1id,
-        fase: "u17-oro",
-        poSlot: 1,
-        localId: loseOR0,
-        visitanteId: W2,
-        fechaExistente: OR1ex?.dia,
-        canchaExistente: OR1ex?.cancha,
-      });
-
-      return;
-    }
-
-    // al cerrar OR1 -> OR2 (final) = ganador OR0 vs ganador OR1
-    if (matchCerrado.id === OR1id) {
-      const OR0 = byId(OR0id);
-      if (!OR0 || !cerr(OR0)) return;
-
-      const W0 = ganador(OR0);
-      const W1 =
-        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
-          ? matchCerrado.localId
-          : matchCerrado.visitanteId;
-
-      const OR2ex = byId(OR2id);
-      await setDoc(
-        doc(db, "torneos", id, "partidos", OR2id),
-        {
-          localId: W0,
-          visitanteId: W1,
-          estado: OR2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-          fase: "u17-oro",
-          poSlot: 2,
-          dia: OR2ex?.dia?.seconds
-            ? new Date(OR2ex.dia.seconds * 1000)
-            : new Date(Date.now() + 4 * 60 * 60 * 1000),
-          cancha: OR2ex?.cancha || canchaPreferida("u17-oro"),
-          updatedAt: serverTimestamp(),
-          ...(OR2ex ? {} : { createdAt: serverTimestamp() }),
-        },
-        { merge: true }
-      );
-
-      abrirProgramarSiguiente({
-        matchId: OR2id,
-        fase: "u17-oro",
-        poSlot: 2,
-        localId: W0,
-        visitanteId: W1,
-        fechaExistente: OR2ex?.dia,
-        canchaExistente: OR2ex?.cancha,
-      });
-
-      return;
-    }
-  }
-
-  // ---------- C) Triangular PLATA ----------
-  if (fase === "u17-plata" && cerr(matchCerrado)) {
-    const PL0id = "u17-plata-0";
-    const PL1id = "u17-plata-1";
-    const PL2id = "u17-plata-2";
-
-    // al cerrar PL0 -> PL1 = perdedor de PL0 vs el que no jugó (entre perdedores)
-    if (matchCerrado.id === PL0id) {
-      const cruces = merged
-        .filter((m) => m.fase === "u17-cruces")
-        .filter(cerr)
-        .sort((a, b) => (a.poSlot ?? 0) - (b.poSlot ?? 0));
-      if (cruces.length !== 3) return;
-
-      const L = [
-        perdedor(cruces[0]),
-        perdedor(cruces[1]),
-        perdedor(cruces[2]),
-      ];
-
-      const losePL0 =
-        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
-          ? matchCerrado.visitanteId
-          : matchCerrado.localId;
-
-      const yaJugaron = new Set([
-        matchCerrado.localId,
-        matchCerrado.visitanteId,
-      ]);
-      const L2 = L.find((x) => !yaJugaron.has(x));
-      if (!L2) return;
-
-      const PL1ex = byId(PL1id);
-      await setDoc(
-        doc(db, "torneos", id, "partidos", PL1id),
-        {
           localId: losePL0,
           visitanteId: L2,
-          estado: PL1ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-          fase: "u17-plata",
-          poSlot: 1,
-          dia: PL1ex?.dia?.seconds
-            ? new Date(PL1ex.dia.seconds * 1000)
-            : new Date(Date.now() + 3 * 60 * 60 * 1000),
-          cancha: PL1ex?.cancha || canchaPreferida("u17-plata"),
-          updatedAt: serverTimestamp(),
-          ...(PL1ex ? {} : { createdAt: serverTimestamp() }),
-        },
-        { merge: true }
-      );
+          fechaExistente: PL1ex?.dia,
+          canchaExistente: PL1ex?.cancha,
+        });
 
-      abrirProgramarSiguiente({
-        matchId: PL1id,
-        fase: "u17-plata",
-        poSlot: 1,
-        localId: losePL0,
-        visitanteId: L2,
-        fechaExistente: PL1ex?.dia,
-        canchaExistente: PL1ex?.cancha,
-      });
+        return;
+      }
 
-      return;
-    }
+      // al cerrar PL1 -> PL2 (final) = ganador PL0 vs ganador PL1
+      if (matchCerrado.id === PL1id) {
+        const PL0 = byId(PL0id);
+        if (!PL0 || !cerr(PL0)) return;
 
-    // al cerrar PL1 -> PL2 (final) = ganador PL0 vs ganador PL1
-    if (matchCerrado.id === PL1id) {
-      const PL0 = byId(PL0id);
-      if (!PL0 || !cerr(PL0)) return;
+        const W0 = ganador(PL0);
+        const W1 =
+          matchCerrado.scoreLocal > matchCerrado.scoreVisitante
+            ? matchCerrado.localId
+            : matchCerrado.visitanteId;
 
-      const W0 = ganador(PL0);
-      const W1 =
-        matchCerrado.scoreLocal > matchCerrado.scoreVisitante
-          ? matchCerrado.localId
-          : matchCerrado.visitanteId;
+        const PL2ex = byId(PL2id);
+        await setDoc(
+          doc(db, 'torneos', id, 'partidos', PL2id),
+          {
+            localId: W0,
+            visitanteId: W1,
+            estado: PL2ex?.estado === 'finalizado' ? 'finalizado' : 'pendiente',
+            fase: 'u17-plata',
+            poSlot: 2,
+            dia: PL2ex?.dia?.seconds
+              ? new Date(PL2ex.dia.seconds * 1000)
+              : new Date(Date.now() + 4 * 60 * 60 * 1000),
+            cancha: PL2ex?.cancha || canchaPreferida('u17-plata'),
+            updatedAt: serverTimestamp(),
+            ...(PL2ex ? {} : { createdAt: serverTimestamp() }),
+          },
+          { merge: true }
+        );
 
-      const PL2ex = byId(PL2id);
-      await setDoc(
-        doc(db, "torneos", id, "partidos", PL2id),
-        {
+        abrirProgramarSiguiente({
+          matchId: PL2id,
+          fase: 'u17-plata',
+          poSlot: 2,
           localId: W0,
           visitanteId: W1,
-          estado: PL2ex?.estado === "finalizado" ? "finalizado" : "pendiente",
-          fase: "u17-plata",
-          poSlot: 2,
-          dia: PL2ex?.dia?.seconds
-            ? new Date(PL2ex.dia.seconds * 1000)
-            : new Date(Date.now() + 4 * 60 * 60 * 1000),
-          cancha: PL2ex?.cancha || canchaPreferida("u17-plata"),
-          updatedAt: serverTimestamp(),
-          ...(PL2ex ? {} : { createdAt: serverTimestamp() }),
-        },
-        { merge: true }
-      );
+          fechaExistente: PL2ex?.dia,
+          canchaExistente: PL2ex?.cancha,
+        });
 
-      abrirProgramarSiguiente({
-        matchId: PL2id,
-        fase: "u17-plata",
-        poSlot: 2,
-        localId: W0,
-        visitanteId: W1,
-        fechaExistente: PL2ex?.dia,
-        canchaExistente: PL2ex?.cancha,
-      });
-
-      return;
+        return;
+      }
     }
-  }
-};
-
-
+  };
 
   const faseGrouped = useMemo(() => {
     const map = {};
-    for (const m of fasePartidos) (map[m.fase || "otros"] ||= []).push(m);
+    for (const m of fasePartidos) (map[m.fase || 'otros'] ||= []).push(m);
     return fasesOrder
       .filter((k) => map[k])
       .map((k) => ({ fase: k, matches: map[k] }));
   }, [fasePartidos]);
 
   const cupMatches = useMemo(() => {
-    const out = { "copa-oro": [], "copa-plata": [], "copa-bronce": [] };
+    const out = { 'copa-oro': [], 'copa-plata': [], 'copa-bronce': [] };
     for (const m of fasePartidos) {
-      if (m.fase === "copa-oro") out["copa-oro"].push(m);
-      if (m.fase === "copa-plata") out["copa-plata"].push(m);
-      if (m.fase === "copa-bronce") out["copa-bronce"].push(m);
+      if (m.fase === 'copa-oro') out['copa-oro'].push(m);
+      if (m.fase === 'copa-plata') out['copa-plata'].push(m);
+      if (m.fase === 'copa-bronce') out['copa-bronce'].push(m);
     }
     return out;
   }, [fasePartidos]);
@@ -1913,22 +1942,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   // POSICIONES por COPA (usa buildTable)
   const posicionesCopas = useMemo(() => {
     const finales = {
-      "copa-oro": [],
-      "copa-plata": [],
-      "copa-bronce": [],
+      'copa-oro': [],
+      'copa-plata': [],
+      'copa-bronce': [],
     };
     for (const p of fasePartidos) {
-      const f = String(p.fase || "");
-      if (!f.startsWith("copa-")) continue;
-      if (p.estado !== "finalizado") continue;
+      const f = String(p.fase || '');
+      if (!f.startsWith('copa-')) continue;
+      if (p.estado !== 'finalizado') continue;
       if (!Number.isFinite(p.scoreLocal) || !Number.isFinite(p.scoreVisitante))
         continue;
       finales[f].push(p);
     }
     return {
-      "copa-oro": buildTable(finales["copa-oro"], equiposMap),
-      "copa-plata": buildTable(finales["copa-plata"], equiposMap),
-      "copa-bronce": buildTable(finales["copa-bronce"], equiposMap),
+      'copa-oro': buildTable(finales['copa-oro'], equiposMap),
+      'copa-plata': buildTable(finales['copa-plata'], equiposMap),
+      'copa-bronce': buildTable(finales['copa-bronce'], equiposMap),
     };
   }, [fasePartidos, equiposMap]);
 
@@ -1936,9 +1965,9 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   const hayCopasEnJuego = useMemo(() => {
     return (
       !!faseCopas ||
-      cupMatches["copa-oro"]?.length ||
-      cupMatches["copa-plata"]?.length ||
-      cupMatches["copa-bronce"]?.length
+      cupMatches['copa-oro']?.length ||
+      cupMatches['copa-plata']?.length ||
+      cupMatches['copa-bronce']?.length
     );
   }, [faseCopas, cupMatches]);
 
@@ -1947,35 +1976,35 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     if (!canManage) return;
     setEditingMatch(match);
     setScoreLocal(
-      Number.isFinite(match?.scoreLocal) ? String(match.scoreLocal) : ""
+      Number.isFinite(match?.scoreLocal) ? String(match.scoreLocal) : ''
     );
     setScoreVisitante(
-      Number.isFinite(match?.scoreVisitante) ? String(match.scoreVisitante) : ""
+      Number.isFinite(match?.scoreVisitante) ? String(match.scoreVisitante) : ''
     );
     // precargar máximos si existían
-    setTopLocalName(match?.tops?.local?.nombre || "");
+    setTopLocalName(match?.tops?.local?.nombre || '');
     setTopLocalPts(
       Number.isFinite(match?.tops?.local?.puntos)
         ? String(match.tops.local.puntos)
-        : ""
+        : ''
     );
-    setTopVisName(match?.tops?.visitante?.nombre || "");
+    setTopVisName(match?.tops?.visitante?.nombre || '');
     setTopVisPts(
       Number.isFinite(match?.tops?.visitante?.puntos)
         ? String(match.tops.visitante.puntos)
-        : ""
+        : ''
     );
     setOpenResult(true);
   };
   const closeResultado = () => {
     setOpenResult(false);
     setEditingMatch(null);
-    setScoreLocal("");
-    setScoreVisitante("");
-    setTopLocalName("");
-    setTopLocalPts("");
-    setTopVisName("");
-    setTopVisPts("");
+    setScoreLocal('');
+    setScoreVisitante('');
+    setTopLocalName('');
+    setTopLocalPts('');
+    setTopVisName('');
+    setTopVisPts('');
     setSaving(false);
   };
 
@@ -1987,14 +2016,14 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) return;
 
     // Sólo nos interesa el caso "semi" para disparar el modal doble.
-    if (match.fase !== "semi") return;
+    if (match.fase !== 'semi') return;
 
     // 🔧 FUSIÓN LOCAL: tomamos fasePartidos actual y "inyectamos" el resultado recién guardado
     const fasePartidosMerged = fasePartidos.map((m) =>
       m.id === match.id
         ? {
             ...m,
-            estado: "finalizado",
+            estado: 'finalizado',
             scoreLocal: sl,
             scoreVisitante: sv,
           }
@@ -2003,13 +2032,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     // ¿Tenemos las dos semifinales con slot?
     const semis = fasePartidosMerged
-      .filter((m) => m.fase === "semi")
+      .filter((m) => m.fase === 'semi')
       .filter((m) => Number.isFinite(m.poSlot));
 
     // Cerradas (finalizado y con scores válidos)
     const semisCerradas = semis.filter(
       (m) =>
-        m.estado === "finalizado" &&
+        m.estado === 'finalizado' &&
         Number.isFinite(m.scoreLocal) &&
         Number.isFinite(m.scoreVisitante)
     );
@@ -2028,10 +2057,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     // ¿Ya existen placeholders de 3.º y final?
     const tercerExistente =
-      fasePartidosMerged.find((m) => m.fase === "tercer" && m.poSlot === 0) ||
+      fasePartidosMerged.find((m) => m.fase === 'tercer' && m.poSlot === 0) ||
       null;
     const finalExistente =
-      fasePartidosMerged.find((m) => m.fase === "final" && m.poSlot === 0) ||
+      fasePartidosMerged.find((m) => m.fase === 'final' && m.poSlot === 0) ||
       null;
 
     abrirProgramarDefiniciones({
@@ -2052,20 +2081,20 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     const sl = Number(scoreLocal);
     const sv = Number(scoreVisitante);
     if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0) {
-      return alert("Cargá puntajes válidos.");
+      return alert('Cargá puntajes válidos.');
     }
     if (sl === sv) {
-      return alert("No se permiten empates.");
+      return alert('No se permiten empates.');
     }
 
     // 2) Validar máximos anotadores (tops)
-    const lPts = topLocalPts === "" ? null : Number(topLocalPts);
-    const vPts = topVisPts === "" ? null : Number(topVisPts);
+    const lPts = topLocalPts === '' ? null : Number(topLocalPts);
+    const vPts = topVisPts === '' ? null : Number(topVisPts);
     if (
       (topLocalName && !Number.isFinite(lPts)) ||
       (topVisName && !Number.isFinite(vPts))
     ) {
-      return alert("Puntos de máximo anotador inválidos.");
+      return alert('Puntos de máximo anotador inválidos.');
     }
     const tops =
       topLocalName || topVisName
@@ -2083,10 +2112,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       setSaving(true);
 
       // 3) Persistir resultado
-      await updateDoc(doc(db, "torneos", id, "partidos", editingMatch.id), {
+      await updateDoc(doc(db, 'torneos', id, 'partidos', editingMatch.id), {
         scoreLocal: sl,
         scoreVisitante: sv,
-        estado: "finalizado",
+        estado: 'finalizado',
         ...(tops ? { tops } : {}),
         updatedAt: serverTimestamp(),
       });
@@ -2095,7 +2124,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       try {
         const matchFinalizado = {
           ...editingMatch,
-          estado: "finalizado",
+          estado: 'finalizado',
           scoreLocal: sl,
           scoreVisitante: sv,
         };
@@ -2106,7 +2135,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
         // U17 queda igual si más adelante lo activás por categoría
         await verSiArmarU17Femenino(matchFinalizado);
       } catch (advErr) {
-        console.warn("Avance automático falló:", advErr);
+        console.warn('Avance automático falló:', advErr);
       }
 
       // 5) Cerrar modal
@@ -2114,16 +2143,16 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     } catch (err) {
       console.error(err);
       setSaving(false);
-      alert("No se pudo guardar el resultado.");
+      alert('No se pudo guardar el resultado.');
     }
   };
 
   const revertirResultado = async (matchId) => {
     if (!canManage) return;
-    if (!confirm("¿Revertir este resultado a pendiente?")) return;
+    if (!confirm('¿Revertir este resultado a pendiente?')) return;
     try {
-      await updateDoc(doc(db, "torneos", id, "partidos", matchId), {
-        estado: "pendiente",
+      await updateDoc(doc(db, 'torneos', id, 'partidos', matchId), {
+        estado: 'pendiente',
         scoreLocal: deleteField(),
         scoreVisitante: deleteField(),
         tops: deleteField(),
@@ -2131,7 +2160,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       });
     } catch (err) {
       console.error(err);
-      alert("No se pudo revertir.");
+      alert('No se pudo revertir.');
     }
   };
 
@@ -2142,26 +2171,26 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     setMetaFecha(
       match?.dia?.seconds
         ? toDatetimeLocalValue(new Date(match.dia.seconds * 1000))
-        : ""
+        : ''
     );
-    setMetaCancha(match?.cancha || "");
+    setMetaCancha(match?.cancha || '');
     setOpenEditMeta(true);
   };
 
   const closeEditarMeta = () => {
     setOpenEditMeta(false);
     setMetaMatch(null);
-    setMetaFecha("");
-    setMetaCancha("");
+    setMetaFecha('');
+    setMetaCancha('');
   };
 
   const guardarMeta = async (e) => {
     e.preventDefault();
     if (!canManage || !metaMatch) return;
-    if (!metaFecha) return alert("Elegí fecha y hora.");
-    if (!metaCancha.trim()) return alert("Ingresá la cancha.");
+    if (!metaFecha) return alert('Elegí fecha y hora.');
+    if (!metaCancha.trim()) return alert('Ingresá la cancha.');
     try {
-      await updateDoc(doc(db, "torneos", id, "partidos", metaMatch.id), {
+      await updateDoc(doc(db, 'torneos', id, 'partidos', metaMatch.id), {
         dia: new Date(metaFecha),
         cancha: metaCancha.trim(),
         updatedAt: serverTimestamp(),
@@ -2169,7 +2198,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       closeEditarMeta();
     } catch (err) {
       console.error(err);
-      alert("No se pudo actualizar fecha/cancha.");
+      alert('No se pudo actualizar fecha/cancha.');
     }
   };
 
@@ -2180,16 +2209,16 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     const { localId, visitanteId, fecha, cancha, interzonal } = matchForm;
 
     if (!localId || !visitanteId || localId === visitanteId)
-      return alert("Elegí equipos distintos.");
-    if (!fecha) return alert("Elegí fecha y hora.");
-    if (!cancha || !cancha.trim()) return alert("Ingresá la cancha.");
+      return alert('Elegí equipos distintos.');
+    if (!fecha) return alert('Elegí fecha y hora.');
+    if (!cancha || !cancha.trim()) return alert('Ingresá la cancha.');
 
     try {
       const gLocal = (
-        equipos.find((x) => x.id === localId)?.grupo || ""
+        equipos.find((x) => x.id === localId)?.grupo || ''
       ).toUpperCase();
       const gVis = (
-        equipos.find((x) => x.id === visitanteId)?.grupo || ""
+        equipos.find((x) => x.id === visitanteId)?.grupo || ''
       ).toUpperCase();
 
       if (gLocal && gVis && gLocal !== gVis && !interzonal) {
@@ -2202,31 +2231,31 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       if (interzonal) {
         if (!gLocal || !gVis || gLocal === gVis) {
           return alert(
-            "Interzonal debe ser entre equipos de grupos diferentes (A vs B)."
+            'Interzonal debe ser entre equipos de grupos diferentes (A vs B).'
           );
         }
       }
 
       // grupo sólo cuando NO es interzonal y ambos están en el mismo grupo
-      const grupo = !interzonal && gLocal && gLocal === gVis ? gLocal : "";
+      const grupo = !interzonal && gLocal && gLocal === gVis ? gLocal : '';
 
       const payload = {
         localId,
         visitanteId,
         dia: new Date(fecha),
         cancha: cancha.trim(),
-        estado: "pendiente",
+        estado: 'pendiente',
         createdAt: serverTimestamp(),
       };
       if (grupo) payload.grupo = grupo; // sólo si hay valor
       if (interzonal) payload.interzonal = true; // sólo si es true
 
-      await addDoc(collection(db, "torneos", id, "partidos"), payload);
+      await addDoc(collection(db, 'torneos', id, 'partidos'), payload);
 
       setOpenMatch(false);
     } catch (err) {
       console.error(err);
-      alert("No se pudo crear el partido.");
+      alert('No se pudo crear el partido.');
     }
   };
 
@@ -2242,11 +2271,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   const ejecutarBorrarPartido = async () => {
     if (!canManage || !matchToDelete) return;
     try {
-      await deleteDoc(doc(db, "torneos", id, "partidos", matchToDelete.id));
+      await deleteDoc(doc(db, 'torneos', id, 'partidos', matchToDelete.id));
       cancelarBorrarPartido();
     } catch (err) {
       console.error(err);
-      alert("No se pudo eliminar el partido.");
+      alert('No se pudo eliminar el partido.');
     }
   };
   const borrarEquipo = async (teamId) => {
@@ -2256,36 +2285,36 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     );
     if (usado)
       return alert(
-        "No podés borrar el equipo: está referenciado por partidos."
+        'No podés borrar el equipo: está referenciado por partidos.'
       );
-    if (!confirm("¿Eliminar este equipo?")) return;
+    if (!confirm('¿Eliminar este equipo?')) return;
     try {
-      await deleteDoc(doc(db, "torneos", id, "equipos", teamId));
+      await deleteDoc(doc(db, 'torneos', id, 'equipos', teamId));
     } catch (err) {
       console.error(err);
-      alert("No se pudo eliminar el equipo.");
+      alert('No se pudo eliminar el equipo.');
     }
   };
 
   async function eliminarPlayoffs() {
     const po = fasePartidos.filter(
-      (m) => !String(m.fase || "").startsWith("copa-")
+      (m) => !String(m.fase || '').startsWith('copa-')
     );
     await Promise.all(
-      po.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+      po.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
   }
   async function eliminarCopasFase() {
     const cups = fasePartidos.filter((m) =>
-      String(m.fase || "").startsWith("copa-")
+      String(m.fase || '').startsWith('copa-')
     );
     await Promise.all(
-      cups.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+      cups.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
     try {
-      await deleteDoc(doc(db, "torneos", id, "fases", "copas"));
+      await deleteDoc(doc(db, 'torneos', id, 'fases', 'copas'));
     } catch (e) {
-      console.warn("Copas: no se pudo eliminar (puede no existir):", e);
+      console.warn('Copas: no se pudo eliminar (puede no existir):', e);
     }
   }
 
@@ -2293,26 +2322,26 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     if (!canManage) return;
     if (nuevo === modoFase) return;
     try {
-      if (nuevo === "copas") {
+      if (nuevo === 'copas') {
         const hayPO = fasePartidos.some(
-          (m) => !String(m.fase || "").startsWith("copa-")
+          (m) => !String(m.fase || '').startsWith('copa-')
         );
         if (
           hayPO &&
           !confirm(
-            "Cambiar a Copas eliminará todos los cruces de Playoffs. ¿Continuar?"
+            'Cambiar a Copas eliminará todos los cruces de Playoffs. ¿Continuar?'
           )
         )
           return;
         await eliminarPlayoffs();
-      } else if (nuevo === "playoffs") {
+      } else if (nuevo === 'playoffs') {
         const hayCopas =
           !!faseCopas ||
-          fasePartidos.some((m) => String(m.fase || "").startsWith("copa-"));
+          fasePartidos.some((m) => String(m.fase || '').startsWith('copa-'));
         if (
           hayCopas &&
           !confirm(
-            "Cambiar a Playoffs eliminará las asignaciones y partidos de Copas. ¿Continuar?"
+            'Cambiar a Playoffs eliminará las asignaciones y partidos de Copas. ¿Continuar?'
           )
         )
           return;
@@ -2320,14 +2349,14 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       }
 
       await setDoc(
-        doc(db, "torneos", id, "fases", "config"),
+        doc(db, 'torneos', id, 'fases', 'config'),
         { modo: nuevo, updatedAt: serverTimestamp() },
         { merge: true }
       );
       setModoFase(nuevo);
     } catch (e) {
       console.error(e);
-      alert("No se pudo cambiar el modo.");
+      alert('No se pudo cambiar el modo.');
     }
   };
 
@@ -2355,12 +2384,12 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
   const asignarCopasAuto = async () => {
     if (!canManage) return;
-    if (modoFase !== "copas")
+    if (modoFase !== 'copas')
       return alert(
-        "El modo activo es Playoffs. Cambiá a Copas para usar esta sección."
+        'El modo activo es Playoffs. Cambiá a Copas para usar esta sección.'
       );
     try {
-      await setDoc(doc(db, "torneos", id, "fases", "copas"), {
+      await setDoc(doc(db, 'torneos', id, 'fases', 'copas'), {
         ...recomendacionCopas,
         cupos: {
           oro: Math.max(1, recomendacionCopas.oro.length),
@@ -2369,18 +2398,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
         },
         updatedAt: serverTimestamp(),
       });
-      alert("Copas asignadas automáticamente.");
+      alert('Copas asignadas automáticamente.');
     } catch (e) {
       console.error(e);
-      alert("No se pudo asignar copas.");
+      alert('No se pudo asignar copas.');
     }
   };
 
   const abrirCopasManual = () => {
     if (!canManage) return;
-    if (modoFase !== "copas")
+    if (modoFase !== 'copas')
       return alert(
-        "El modo activo es Playoffs. Cambiá a Copas para usar esta sección."
+        'El modo activo es Playoffs. Cambiá a Copas para usar esta sección.'
       );
     const base = faseCopas ||
       recomendacionCopas || {
@@ -2447,9 +2476,9 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   const guardarCopasManual = async (e) => {
     e.preventDefault();
     if (!canManage) return;
-    if (modoFase !== "copas")
+    if (modoFase !== 'copas')
       return alert(
-        "El modo activo es Playoffs. Cambiá a Copas para usar esta sección."
+        'El modo activo es Playoffs. Cambiá a Copas para usar esta sección.'
       );
 
     const { oro, plata, bronce } = copasSel;
@@ -2458,13 +2487,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       plata.length > copaMax.plata ||
       bronce.length > copaMax.bronce
     )
-      return alert("No superes los cupos configurados.");
+      return alert('No superes los cupos configurados.');
     const picks = [...oro, ...plata, ...bronce];
     if (new Set(picks).size !== picks.length)
-      return alert("Un equipo no puede estar en más de una copa.");
+      return alert('Un equipo no puede estar en más de una copa.');
 
     try {
-      await setDoc(doc(db, "torneos", id, "fases", "copas"), {
+      await setDoc(doc(db, 'torneos', id, 'fases', 'copas'), {
         oro,
         plata,
         bronce,
@@ -2473,27 +2502,27 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       });
       setOpenCopasManual(false);
     } catch (e2) {
-      console.error("guardarCopasManual error:", e2);
-      alert("No se pudo guardar la configuración de copas.");
+      console.error('guardarCopasManual error:', e2);
+      alert('No se pudo guardar la configuración de copas.');
     }
   };
 
   const abrirModalFixtureCopa = (claveCopa, ids) => {
     if (!canManage) return;
-    if (modoFase !== "copas")
+    if (modoFase !== 'copas')
       return alert(
-        "El modo activo es Playoffs. Cambiá a Copas para usar esta sección."
+        'El modo activo es Playoffs. Cambiá a Copas para usar esta sección.'
       );
     if (!ids || ids.length < 2)
-      return alert("Se necesitan al menos 2 equipos en la copa.");
+      return alert('Se necesitan al menos 2 equipos en la copa.');
     const pairs = [];
     for (let i = 0; i < ids.length; i++)
       for (let j = i + 1; j < ids.length; j++)
         pairs.push({
           localId: ids[i],
           visitanteId: ids[j],
-          fecha: "",
-          cancha: "",
+          fecha: '',
+          cancha: '',
         });
     setCopaModalKey(claveCopa);
     setCopaModalPairs(pairs);
@@ -2503,30 +2532,30 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   const guardarFixtureCopaConDetalles = async (e) => {
     e.preventDefault();
     if (!canManage) return;
-    if (modoFase !== "copas")
+    if (modoFase !== 'copas')
       return alert(
-        "El modo activo es Playoffs. Cambiá a Copas para usar esta sección."
+        'El modo activo es Playoffs. Cambiá a Copas para usar esta sección.'
       );
     if (!copaModalKey || !copaModalPairs.length) return;
     for (const p of copaModalPairs) {
       if (!p.fecha)
-        return alert("Completá fecha y hora en todos los partidos.");
+        return alert('Completá fecha y hora en todos los partidos.');
       if (!p.cancha?.trim())
-        return alert("Completá la cancha en todos los partidos.");
+        return alert('Completá la cancha en todos los partidos.');
     }
     try {
       const existentes = fasePartidos.filter((m) => m.fase === copaModalKey);
       await Promise.all(
         existentes.map((m) =>
-          deleteDoc(doc(db, "torneos", id, "partidos", m.id))
+          deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
       await Promise.all(
         copaModalPairs.map((p) =>
-          addDoc(collection(db, "torneos", id, "partidos"), {
+          addDoc(collection(db, 'torneos', id, 'partidos'), {
             localId: p.localId,
             visitanteId: p.visitanteId,
-            estado: "pendiente",
+            estado: 'pendiente',
             fase: copaModalKey,
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
@@ -2537,24 +2566,24 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       setOpenCopaModal(false);
       setCopaModalKey(null);
       setCopaModalPairs([]);
-      alert("Mini-fixture de copa creado.");
+      alert('Mini-fixture de copa creado.');
     } catch (err) {
       console.error(err);
-      alert("No se pudo crear el mini-fixture.");
+      alert('No se pudo crear el mini-fixture.');
     }
   };
 
   /* ---------- Playoffs ---------- */
   const seedName = (n) =>
     n === 2
-      ? "final"
+      ? 'final'
       : n === 4
-      ? "semi"
+      ? 'semi'
       : n === 8
-      ? "cuartos"
+      ? 'cuartos'
       : n === 16
-      ? "octavos"
-      : "otros";
+      ? 'octavos'
+      : 'otros';
 
   // NUEVO: recomputar cruces iniciales con programación
   const recomputePoPairs = (selIds, n) => {
@@ -2566,16 +2595,16 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     for (let i = 0; i < Math.floor(n / 2); i++) {
       const localId = ordered[i];
       const visitanteId = ordered[ordered.length - 1 - i];
-      pairs.push({ localId, visitanteId, fecha: "", cancha: "", slot: i });
+      pairs.push({ localId, visitanteId, fecha: '', cancha: '', slot: i });
     }
     setPoPairs(pairs);
   };
 
   const abrirPOConfig = () => {
     if (!canManage) return;
-    if (modoFase !== "playoffs")
+    if (modoFase !== 'playoffs')
       return alert(
-        "El modo activo es Copas. Cambiá a Playoffs para usar esta sección."
+        'El modo activo es Copas. Cambiá a Playoffs para usar esta sección.'
       );
     const maxN = Math.min(posicionesGenerales.length, 16);
     const defaultN = [16, 8, 4, 2].find((k) => k <= maxN) || 2;
@@ -2589,19 +2618,19 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   const guardarPOConfig = async (e) => {
     e.preventDefault();
     if (!canManage) return;
-    if (modoFase !== "playoffs")
+    if (modoFase !== 'playoffs')
       return alert(
-        "El modo activo es Copas. Cambiá a Playoffs para usar esta sección."
+        'El modo activo es Copas. Cambiá a Playoffs para usar esta sección.'
       );
     if (poSeleccion.length !== poN)
       return alert(`Elegí exactamente ${poN} equipos.`);
-    if (poPairs.length !== poN / 2) return alert("Faltan cruces.");
+    if (poPairs.length !== poN / 2) return alert('Faltan cruces.');
 
     for (const p of poPairs) {
       if (!p.fecha)
-        return alert("Completá fecha y hora en todos los partidos.");
+        return alert('Completá fecha y hora en todos los partidos.');
       if (!p.cancha?.trim())
-        return alert("Completá la cancha en todos los partidos.");
+        return alert('Completá la cancha en todos los partidos.');
     }
 
     const fase = seedName(poN);
@@ -2609,14 +2638,14 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       const existentes = fasePartidos.filter((m) => m.fase === fase);
       await Promise.all(
         existentes.map((m) =>
-          deleteDoc(doc(db, "torneos", id, "partidos", m.id))
+          deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
       for (const p of poPairs) {
-        await addDoc(collection(db, "torneos", id, "partidos"), {
+        await addDoc(collection(db, 'torneos', id, 'partidos'), {
           localId: p.localId,
           visitanteId: p.visitanteId,
-          estado: "pendiente",
+          estado: 'pendiente',
           fase,
           poSlot: p.slot,
           dia: new Date(p.fecha),
@@ -2627,23 +2656,23 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       setOpenPOConfig(false);
     } catch (e2) {
       console.error(e2);
-      alert("No se pudieron crear los cruces.");
+      alert('No se pudieron crear los cruces.');
     }
   };
 
   async function sembrarU13Femenino() {
     if (!canManage) return;
-    if (modoFase !== "playoffs") {
-      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U13F.");
+    if (modoFase !== 'playoffs') {
+      alert('El modo activo es Copas. Cambiá a Playoffs para sembrar U13F.');
       return;
     }
 
-    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
-    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+    const topA = (posicionesPorGrupo['A'] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo['B'] || []).map((t) => t.id);
 
     if (topA.length < 4 || topB.length < 5) {
       alert(
-        "Faltan posiciones: U13F requiere al menos A(1..4) y B(1..5) para sembrar."
+        'Faltan posiciones: U13F requiere al menos A(1..4) y B(1..5) para sembrar.'
       );
       return;
     }
@@ -2660,17 +2689,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     const aBorrar = fasePartidos.filter((m) =>
       [
-        "u13b-reclasif",
-        "oro-semi",
-        "plata-semi",
-        "tercer-oro",
-        "final-oro",
-        "tercer-plata",
-        "final-plata",
-      ].includes(String(m.fase || ""))
+        'u13b-reclasif',
+        'oro-semi',
+        'plata-semi',
+        'tercer-oro',
+        'final-oro',
+        'tercer-plata',
+        'final-plata',
+      ].includes(String(m.fase || ''))
     );
     await Promise.all(
-      aBorrar.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+      aBorrar.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
 
     const base = Date.now() + 60 * 60 * 1000;
@@ -2681,54 +2710,54 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     // Reclasificación (Zona B): B4 vs B5
     writes.push(
-      addDoc(collection(db, "torneos", id, "partidos"), {
+      addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId: B4,
         visitanteId: B5,
-        estado: "pendiente",
-        fase: "u13b-reclasif",
+        estado: 'pendiente',
+        fase: 'u13b-reclasif',
         poSlot: 0,
         dia: nextDate(),
-        cancha: "",
+        cancha: '',
         createdAt: serverTimestamp(),
       })
     );
 
     // Semifinales ORO (1A–2B y 1B–2A)
     writes.push(
-      addDoc(collection(db, "torneos", id, "partidos"), {
+      addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId: A1,
         visitanteId: B2,
-        estado: "pendiente",
-        fase: "oro-semi",
+        estado: 'pendiente',
+        fase: 'oro-semi',
         poSlot: 0,
         dia: nextDate(),
-        cancha: "",
+        cancha: '',
         createdAt: serverTimestamp(),
       })
     );
     writes.push(
-      addDoc(collection(db, "torneos", id, "partidos"), {
+      addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId: B1,
         visitanteId: A2,
-        estado: "pendiente",
-        fase: "oro-semi",
+        estado: 'pendiente',
+        fase: 'oro-semi',
         poSlot: 1,
         dia: nextDate(),
-        cancha: "",
+        cancha: '',
         createdAt: serverTimestamp(),
       })
     );
 
     // Semifinales PLATA: poSlot 1 (3B–4A) ahora
     writes.push(
-      addDoc(collection(db, "torneos", id, "partidos"), {
+      addDoc(collection(db, 'torneos', id, 'partidos'), {
         localId: B3,
         visitanteId: A4,
-        estado: "pendiente",
-        fase: "plata-semi",
+        estado: 'pendiente',
+        fase: 'plata-semi',
         poSlot: 1,
         dia: nextDate(),
-        cancha: "",
+        cancha: '',
         createdAt: serverTimestamp(),
       })
     );
@@ -2737,27 +2766,27 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     try {
       await Promise.all(writes);
       alert(
-        "U13F sembrado. Cargá el resultado de B4–B5: se arma la otra semi PLATA (3A vs ganador)."
+        'U13F sembrado. Cargá el resultado de B4–B5: se arma la otra semi PLATA (3A vs ganador).'
       );
-      setTab("fase");
+      setTab('fase');
     } catch (err) {
       console.error(err);
-      alert("No se pudo sembrar U13F.");
+      alert('No se pudo sembrar U13F.');
     }
   }
 
   // Abre el modal prearmando los 5 partidos de U13F para que les pongas cancha/horarios
   function abrirSembrarU13UIModal() {
     if (!canManage) return;
-    if (modoFase !== "playoffs") {
-      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U13F.");
+    if (modoFase !== 'playoffs') {
+      alert('El modo activo es Copas. Cambiá a Playoffs para sembrar U13F.');
       return;
     }
 
-    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
-    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+    const topA = (posicionesPorGrupo['A'] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo['B'] || []).map((t) => t.id);
     if (topA.length < 4 || topB.length < 5) {
-      alert("Faltan posiciones: U13F requiere al menos A(1..4) y B(1..5).");
+      alert('Faltan posiciones: U13F requiere al menos A(1..4) y B(1..5).');
       return;
     }
 
@@ -2769,51 +2798,51 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     const pairs = [
       {
-        label: "Reclasificación (B4 vs B5)",
-        fase: "u13b-reclasif",
+        label: 'Reclasificación (B4 vs B5)',
+        fase: 'u13b-reclasif',
         poSlot: 0,
         localId: B4,
         visitanteId: B5,
         fecha: dt(0),
-        cancha: "",
+        cancha: '',
       },
       {
-        label: "Semi Oro 1 (1A vs 2B)",
-        fase: "oro-semi",
+        label: 'Semi Oro 1 (1A vs 2B)',
+        fase: 'oro-semi',
         poSlot: 0,
         localId: A1,
         visitanteId: B2,
         fecha: dt(1),
-        cancha: "",
+        cancha: '',
       },
       {
-        label: "Semi Oro 2 (1B vs 2A)",
-        fase: "oro-semi",
+        label: 'Semi Oro 2 (1B vs 2A)',
+        fase: 'oro-semi',
         poSlot: 1,
         localId: B1,
         visitanteId: A2,
         fecha: dt(2),
-        cancha: "",
+        cancha: '',
       },
       {
-        label: "Semi Plata 2 (3B vs 4A)",
-        fase: "plata-semi",
+        label: 'Semi Plata 2 (3B vs 4A)',
+        fase: 'plata-semi',
         poSlot: 1,
         localId: B3,
         visitanteId: A4,
         fecha: dt(3),
-        cancha: "",
+        cancha: '',
       },
       // Placeholder: 3A vs ganador(B4–B5). Se guarda con id fijo y luego tu lógica lo completa
       {
-        label: "Semi Plata 1 (3A vs ganador B4–B5)",
-        fase: "plata-semi",
+        label: 'Semi Plata 1 (3A vs ganador B4–B5)',
+        fase: 'plata-semi',
         poSlot: 0,
         localId: A3,
         visitanteId: null,
         fecha: dt(4),
-        cancha: "",
-        fixedId: "u13-plata-semi-0",
+        cancha: '',
+        fixedId: 'u13-plata-semi-0',
       },
     ];
 
@@ -2823,17 +2852,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
   function abrirSembrarU15UIModal() {
     if (!canManage) return;
-    if (modoFase !== "playoffs") {
-      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U15F.");
+    if (modoFase !== 'playoffs') {
+      alert('El modo activo es Copas. Cambiá a Playoffs para sembrar U15F.');
       return;
     }
 
-    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
-    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+    const topA = (posicionesPorGrupo['A'] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo['B'] || []).map((t) => t.id);
 
     // Necesitamos A(1..5) y B(1..4)
     if (topA.length < 5 || topB.length < 4) {
-      alert("Faltan posiciones: U15F requiere al menos A(1..5) y B(1..4).");
+      alert('Faltan posiciones: U15F requiere al menos A(1..5) y B(1..4).');
       return;
     }
 
@@ -2846,57 +2875,57 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     const pairs = [
       // Play-in/reclasificación: A4 vs A5
       {
-        label: "Reclasificación (A4 vs A5)",
-        fase: "u15a-reclasif",
+        label: 'Reclasificación (A4 vs A5)',
+        fase: 'u15a-reclasif',
         poSlot: 0,
         localId: A4,
         visitanteId: A5,
         fecha: dt(0),
-        cancha: "",
+        cancha: '',
       },
 
       // Semifinales ORO (igual que U13): 1A–2B y 1B–2A
       {
-        label: "Semi Oro 1 (1A vs 2B)",
-        fase: "oro-semi",
+        label: 'Semi Oro 1 (1A vs 2B)',
+        fase: 'oro-semi',
         poSlot: 0,
         localId: A1,
         visitanteId: B2,
         fecha: dt(1),
-        cancha: "",
+        cancha: '',
       },
       {
-        label: "Semi Oro 2 (1B vs 2A)",
-        fase: "oro-semi",
+        label: 'Semi Oro 2 (1B vs 2A)',
+        fase: 'oro-semi',
         poSlot: 1,
         localId: B1,
         visitanteId: A2,
         fecha: dt(2),
-        cancha: "",
+        cancha: '',
       },
 
       // Semifinales PLATA:
       // slot 1 queda fijo: 3A vs 4B
       {
-        label: "Semi Plata 2 (3A vs 4B)",
-        fase: "plata-semi",
+        label: 'Semi Plata 2 (3A vs 4B)',
+        fase: 'plata-semi',
         poSlot: 1,
         localId: A3,
         visitanteId: B4,
         fecha: dt(3),
-        cancha: "",
+        cancha: '',
       },
 
       // slot 0 es el especial: 3B vs GANADOR(A4–A5), con id fijo para que se complete solo
       {
-        label: "Semi Plata 1 (3B vs ganador A4–A5)",
-        fase: "plata-semi",
+        label: 'Semi Plata 1 (3B vs ganador A4–A5)',
+        fase: 'plata-semi',
         poSlot: 0,
         localId: B3,
         visitanteId: null, // se completa luego
         fecha: dt(4),
-        cancha: "",
-        fixedId: "u15-plata-semi-0", // coincide con verSiArmarU15Femenino
+        cancha: '',
+        fixedId: 'u15-plata-semi-0', // coincide con verSiArmarU15Femenino
       },
     ];
 
@@ -2906,17 +2935,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
   function abrirSembrarU17UIModal() {
     if (!canManage) return;
-    if (modoFase !== "playoffs") {
-      alert("El modo activo es Copas. Cambiá a Playoffs para sembrar U17F.");
+    if (modoFase !== 'playoffs') {
+      alert('El modo activo es Copas. Cambiá a Playoffs para sembrar U17F.');
       return;
     }
 
-    const topA = (posicionesPorGrupo["A"] || []).map((t) => t.id);
-    const topB = (posicionesPorGrupo["B"] || []).map((t) => t.id);
+    const topA = (posicionesPorGrupo['A'] || []).map((t) => t.id);
+    const topB = (posicionesPorGrupo['B'] || []).map((t) => t.id);
 
     // Necesitamos A(1..3) y B(1..3)
     if (topA.length < 3 || topB.length < 3) {
-      alert("Faltan posiciones: U17F requiere A(1..3) y B(1..3).");
+      alert('Faltan posiciones: U17F requiere A(1..3) y B(1..3).');
       return;
     }
 
@@ -2929,31 +2958,31 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     const pairs = [
       {
-        label: "Cruce 1 (1A vs 3B)",
-        fase: "u17-cruces",
+        label: 'Cruce 1 (1A vs 3B)',
+        fase: 'u17-cruces',
         poSlot: 0,
         localId: A1,
         visitanteId: B3,
         fecha: dt(0),
-        cancha: "",
+        cancha: '',
       },
       {
-        label: "Cruce 2 (2A vs 2B)",
-        fase: "u17-cruces",
+        label: 'Cruce 2 (2A vs 2B)',
+        fase: 'u17-cruces',
         poSlot: 1,
         localId: A2,
         visitanteId: B2,
         fecha: dt(1),
-        cancha: "",
+        cancha: '',
       },
       {
-        label: "Cruce 3 (1B vs 3A)",
-        fase: "u17-cruces",
+        label: 'Cruce 3 (1B vs 3A)',
+        fase: 'u17-cruces',
         poSlot: 2,
         localId: B1,
         visitanteId: A3,
         fecha: dt(2),
-        cancha: "",
+        cancha: '',
       },
     ];
 
@@ -2972,7 +3001,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       keys.has(`${m.fase}::${m.poSlot}`)
     );
     await Promise.all(
-      existentes.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+      existentes.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
 
     const writes = [];
@@ -2983,7 +3012,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       const payload = {
         localId: p.localId,
         ...(p.visitanteId ? { visitanteId: p.visitanteId } : {}), // semi de 3A espera ganador
-        estado: "pendiente",
+        estado: 'pendiente',
         fase: p.fase,
         poSlot: p.poSlot,
         dia: new Date(p.fecha),
@@ -2995,22 +3024,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       if (p.fixedId) {
         // placeholder con id fijo para que luego verSiArmarU13Femenino complete el rival manteniendo fecha/cancha
         writes.push(
-          setDoc(doc(db, "torneos", id, "partidos", p.fixedId), payload, {
+          setDoc(doc(db, 'torneos', id, 'partidos', p.fixedId), payload, {
             merge: true,
           })
         );
       } else {
-        writes.push(addDoc(collection(db, "torneos", id, "partidos"), payload));
+        writes.push(addDoc(collection(db, 'torneos', id, 'partidos'), payload));
       }
     }
 
     try {
       await Promise.all(writes);
       setOpenU13Seed(false);
-      setTab("fase");
+      setTab('fase');
     } catch (err) {
       console.error(err);
-      alert("No se pudieron crear los cruces U13F.");
+      alert('No se pudieron crear los cruces U13F.');
     }
   }
 
@@ -3024,7 +3053,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       keys.has(`${m.fase}::${m.poSlot}`)
     );
     await Promise.all(
-      existentes.map((m) => deleteDoc(doc(db, "torneos", id, "partidos", m.id)))
+      existentes.map((m) => deleteDoc(doc(db, 'torneos', id, 'partidos', m.id)))
     );
 
     const writes = [];
@@ -3035,7 +3064,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       const payload = {
         localId: p.localId,
         ...(p.visitanteId ? { visitanteId: p.visitanteId } : {}), // el placeholder espera ganador
-        estado: "pendiente",
+        estado: 'pendiente',
         fase: p.fase,
         poSlot: p.poSlot,
         dia: new Date(p.fecha),
@@ -3046,22 +3075,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
       if (p.fixedId) {
         writes.push(
-          setDoc(doc(db, "torneos", id, "partidos", p.fixedId), payload, {
+          setDoc(doc(db, 'torneos', id, 'partidos', p.fixedId), payload, {
             merge: true,
           })
         );
       } else {
-        writes.push(addDoc(collection(db, "torneos", id, "partidos"), payload));
+        writes.push(addDoc(collection(db, 'torneos', id, 'partidos'), payload));
       }
     }
 
     try {
       await Promise.all(writes);
       setOpenU15Seed(false);
-      setTab("fase");
+      setTab('fase');
     } catch (err) {
       console.error(err);
-      alert("No se pudieron crear los cruces U15F.");
+      alert('No se pudieron crear los cruces U15F.');
     }
   }
 
@@ -3077,21 +3106,21 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
     try {
       // Evitar duplicados: borrar existentes de u17-cruces
-      const existentes = fasePartidos.filter((m) => m.fase === "u17-cruces");
+      const existentes = fasePartidos.filter((m) => m.fase === 'u17-cruces');
       await Promise.all(
         existentes.map((m) =>
-          deleteDoc(doc(db, "torneos", id, "partidos", m.id))
+          deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
 
       // Crear los 3 cruces iniciales
       await Promise.all(
         u17Pairs.map((p) =>
-          addDoc(collection(db, "torneos", id, "partidos"), {
+          addDoc(collection(db, 'torneos', id, 'partidos'), {
             localId: p.localId,
             visitanteId: p.visitanteId,
-            estado: "pendiente",
-            fase: "u17-cruces",
+            estado: 'pendiente',
+            fase: 'u17-cruces',
             poSlot: p.poSlot,
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
@@ -3101,30 +3130,30 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       );
 
       setOpenU17Seed(false);
-      setTab("fase");
+      setTab('fase');
       alert(
-        "U17F sembrado. Al cerrar los 3 cruces se generarán los triangulares Oro y Plata automáticamente."
+        'U17F sembrado. Al cerrar los 3 cruces se generarán los triangulares Oro y Plata automáticamente.'
       );
     } catch (err) {
       console.error(err);
-      alert("No se pudieron crear los cruces U17F.");
+      alert('No se pudieron crear los cruces U17F.');
     }
   }
 
   const borrarCrucesFaseFinal = async () => {
     if (!canManage) return;
-    if (modoFase !== "playoffs") return alert("El modo activo es Copas.");
+    if (modoFase !== 'playoffs') return alert('El modo activo es Copas.');
     if (!fasePartidos.length) return;
-    if (!confirm("¿Eliminar TODOS los cruces de la fase final?")) return;
+    if (!confirm('¿Eliminar TODOS los cruces de la fase final?')) return;
     try {
       await Promise.all(
         fasePartidos.map((m) =>
-          deleteDoc(doc(db, "torneos", id, "partidos", m.id))
+          deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
     } catch (e) {
       console.error(e);
-      alert("No se pudieron eliminar los cruces.");
+      alert('No se pudieron eliminar los cruces.');
     }
   };
 
@@ -3133,15 +3162,15 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     if (!canManage) return;
     const equiposG = (equiposPorGrupo[g] || []).map((e) => e.id);
     if (equiposG.length < 2)
-      return alert("Ese grupo necesita al menos 2 equipos.");
+      return alert('Ese grupo necesita al menos 2 equipos.');
     const pairs = [];
     for (let i = 0; i < equiposG.length; i++)
       for (let j = i + 1; j < equiposG.length; j++)
         pairs.push({
           localId: equiposG[i],
           visitanteId: equiposG[j],
-          fecha: "",
-          cancha: "",
+          fecha: '',
+          cancha: '',
         });
     setGrupoModalKey(g);
     setGrupoModalPairs(pairs);
@@ -3154,25 +3183,25 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     if (!grupoModalKey || !grupoModalPairs.length) return;
     for (const p of grupoModalPairs) {
       if (!p.fecha)
-        return alert("Completá fecha y hora en todos los partidos.");
+        return alert('Completá fecha y hora en todos los partidos.');
       if (!p.cancha?.trim())
-        return alert("Completá la cancha en todos los partidos.");
+        return alert('Completá la cancha en todos los partidos.');
     }
     try {
       const existentes = partidos.filter(
-        (m) => !m.fase && (m.grupo || "").toUpperCase() === grupoModalKey
+        (m) => !m.fase && (m.grupo || '').toUpperCase() === grupoModalKey
       );
       await Promise.all(
         existentes.map((m) =>
-          deleteDoc(doc(db, "torneos", id, "partidos", m.id))
+          deleteDoc(doc(db, 'torneos', id, 'partidos', m.id))
         )
       );
       await Promise.all(
         grupoModalPairs.map((p) =>
-          addDoc(collection(db, "torneos", id, "partidos"), {
+          addDoc(collection(db, 'torneos', id, 'partidos'), {
             localId: p.localId,
             visitanteId: p.visitanteId,
-            estado: "pendiente",
+            estado: 'pendiente',
             grupo: grupoModalKey,
             dia: new Date(p.fecha),
             cancha: p.cancha.trim(),
@@ -3183,10 +3212,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       setOpenGrupoModal(false);
       setGrupoModalKey(null);
       setGrupoModalPairs([]);
-      alert("Fixture del grupo creado.");
+      alert('Fixture del grupo creado.');
     } catch (err) {
       console.error(err);
-      alert("No se pudo crear el fixture del grupo.");
+      alert('No se pudo crear el fixture del grupo.');
     }
   };
 
@@ -3194,23 +3223,23 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   const showFaseTab = Boolean(admin || hayFaseFinal || modoFase);
 
   const tabs = [
-    "fixture",
-    "resultados",
-    "posiciones",
-    ...(hayCopasEnJuego ? ["pos-copas"] : []),
-    "goleadores",
-    "equipos",
-    ...(showFaseTab ? ["fase"] : []),
+    'fixture',
+    'resultados',
+    'posiciones',
+    ...(hayCopasEnJuego ? ['pos-copas'] : []),
+    'goleadores',
+    'equipos',
+    ...(showFaseTab ? ['fase'] : []),
   ];
 
   const irAPosCopas = () => {
-    setTab("pos-copas");
-    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
+    setTab('pos-copas');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
   const irAPosiciones = () => {
-    setTab("posiciones");
-    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
+    setTab('posiciones');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
   // 👉 Mostrar/ocultar flechas y desplazar el contenedor de tabs
@@ -3225,7 +3254,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   function scrollTabs(dir = 1) {
     const el = tabsScrollRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir * 220, behavior: "smooth" });
+    el.scrollBy({ left: dir * 220, behavior: 'smooth' });
   }
 
   useEffect(() => {
@@ -3233,11 +3262,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
     const el = tabsScrollRef.current;
     if (!el) return;
     const onScroll = () => updateTabArrows();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", updateTabArrows);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', updateTabArrows);
     return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", updateTabArrows);
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', updateTabArrows);
     };
   }, [tabs.length]);
 
@@ -3255,15 +3284,15 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
           acc[key] = {
             nombre: t.nombre.trim(),
             equipoId: teamId,
-            equipo: equiposMap[teamId] || "Equipo",
+            equipo: equiposMap[teamId] || 'Equipo',
             total: 0,
             pj: 0,
           };
         acc[key].total += puntos;
         acc[key].pj += 1;
       };
-      push("local", p.localId);
-      push("visitante", p.visitanteId);
+      push('local', p.localId);
+      push('visitante', p.visitanteId);
     }
     return Object.values(acc).sort(
       (a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre)
@@ -3271,22 +3300,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
   }, [resultados, equiposMap]);
 
   return (
-    <div className="space-y-5">
+    <div className='space-y-5'>
       {/* Header */}
-      <div className="rounded-2xl p-[1px] bg-gradient-to-r from-blue-200/60 via-purple-200/60 to-pink-200/60">
-        <div className="rounded-2xl bg-white/70 backdrop-blur-md p-4 sm:p-5 border border-white/40">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+      <div className='rounded-2xl p-[1px] bg-gradient-to-r from-blue-200/60 via-purple-200/60 to-pink-200/60'>
+        <div className='rounded-2xl bg-white/70 backdrop-blur-md p-4 sm:p-5 border border-white/40'>
+          <div className='flex items-center justify-between gap-3'>
+            <div className='flex items-center gap-2'>
               <button
                 onClick={() => nav(-1)}
-                className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 bg-white hover:bg-gray-50 text-gray-700"
-                title="Volver"
+                className='inline-flex items-center gap-2 rounded-xl border px-3 py-2 bg-white hover:bg-gray-50 text-gray-700'
+                title='Volver'
               >
-                <IconBack /> <span className="hidden sm:inline">Volver</span>
+                <IconBack /> <span className='hidden sm:inline'>Volver</span>
               </button>
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
-                  {torneo?.nombre || "Torneo"}
+                <h2 className='text-xl sm:text-2xl font-bold tracking-tight'>
+                  {torneo?.nombre || 'Torneo'}
                 </h2>
                 {torneo?.categoria && (
                   <div
@@ -3300,8 +3329,8 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:block text-sm text-gray-700 mr-2">
+            <div className='flex items-center gap-2'>
+              <div className='hidden sm:block text-sm text-gray-700 mr-2'>
                 {equipos.length} equipos · {partidos.length} partidos
               </div>
               {canManage && (
@@ -3327,18 +3356,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       </div>
 
       {/* Tabs */}
-      <div className="rounded-2xl bg-white/80 backdrop-blur-md border shadow-sm">
-        <div className="relative">
+      <div className='rounded-2xl bg-white/80 backdrop-blur-md border shadow-sm'>
+        <div className='relative'>
           {/* fundido lateral */}
-          <div className="pointer-events-none absolute left-0 top-0 h-full w-10 bg-gradient-to-r from-white/90 to-transparent rounded-l-2xl" />
-          <div className="pointer-events-none absolute right-0 top-0 h-full w-10 bg-gradient-to-l from-white/90 to-transparent rounded-r-2xl" />
+          <div className='pointer-events-none absolute left-0 top-0 h-full w-10 bg-gradient-to-r from-white/90 to-transparent rounded-l-2xl' />
+          <div className='pointer-events-none absolute right-0 top-0 h-full w-10 bg-gradient-to-l from-white/90 to-transparent rounded-r-2xl' />
 
           {/* Flecha izquierda */}
           {showLeft && (
             <button
               onClick={() => scrollTabs(-1)}
-              className="absolute left-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur-sm shadow ring-1 ring-black/10 hover:shadow-md active:scale-95"
-              aria-label="Desplazar a la izquierda"
+              className='absolute left-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur-sm shadow ring-1 ring-black/10 hover:shadow-md active:scale-95'
+              aria-label='Desplazar a la izquierda'
             >
               <IconBack />
             </button>
@@ -3348,20 +3377,20 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
           {showRight && (
             <button
               onClick={() => scrollTabs(1)}
-              className="absolute right-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur-sm shadow ring-1 ring-black/10 hover:shadow-md active:scale-95"
-              aria-label="Desplazar a la derecha"
+              className='absolute right-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center rounded-full bg-white/90 backdrop-blur-sm shadow ring-1 ring-black/10 hover:shadow-md active:scale-95'
+              aria-label='Desplazar a la derecha'
             >
-              <IconBack style={{ transform: "rotate(180deg)" }} />
+              <IconBack style={{ transform: 'rotate(180deg)' }} />
             </button>
           )}
 
           {/* Contenedor scrollable */}
           <div
-            className="overflow-x-auto no-scrollbar px-9"
+            className='overflow-x-auto no-scrollbar px-9'
             ref={tabsScrollRef}
             onScroll={updateTabArrows}
           >
-            <div className="flex gap-2 p-2 min-w-max">
+            <div className='flex gap-2 p-2 min-w-max'>
               {tabs.map((t) => {
                 const active = tab === t;
                 return (
@@ -3369,27 +3398,27 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     key={t}
                     onClick={() => setTab(t)}
                     className={[
-                      "relative px-4 py-2 rounded-xl text-sm border transition whitespace-nowrap",
+                      'relative px-4 py-2 rounded-xl text-sm border transition whitespace-nowrap',
                       active
-                        ? "text-white border-transparent bg-gradient-to-r from-slate-800 to-gray-900 shadow-sm"
-                        : "bg-white hover:bg-gray-50",
-                    ].join(" ")}
+                        ? 'text-white border-transparent bg-gradient-to-r from-slate-800 to-gray-900 shadow-sm'
+                        : 'bg-white hover:bg-gray-50',
+                    ].join(' ')}
                   >
                     {
                       {
-                        fixture: "Fixture",
-                        resultados: "Resultados",
-                        posiciones: "Posiciones",
-                        "pos-copas": "Posiciones copas",
-                        goleadores: "Goleadores",
-                        equipos: "Equipos",
-                        fase: "Fase final",
+                        fixture: 'Fixture',
+                        resultados: 'Resultados',
+                        posiciones: 'Posiciones',
+                        'pos-copas': 'Posiciones copas',
+                        goleadores: 'Goleadores',
+                        equipos: 'Equipos',
+                        fase: 'Fase final',
                       }[t]
                     }
 
                     {/* subrayado sutil al estar activo */}
                     {active && (
-                      <span className="absolute left-3 right-3 -bottom-[6px] h-[3px] rounded-full bg-gray-900/80" />
+                      <span className='absolute left-3 right-3 -bottom-[6px] h-[3px] rounded-full bg-gray-900/80' />
                     )}
                   </button>
                 );
@@ -3401,34 +3430,34 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
       {/* Loading */}
       {loading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-2xl bg-white p-4 shadow-sm border">
-              <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-3"></div>
-              <div className="h-3 w-56 bg-gray-100 rounded animate-pulse"></div>
+            <div key={i} className='rounded-2xl bg-white p-4 shadow-sm border'>
+              <div className='h-4 w-40 bg-gray-200 rounded animate-pulse mb-3'></div>
+              <div className='h-3 w-56 bg-gray-100 rounded animate-pulse'></div>
             </div>
           ))}
         </div>
       )}
 
       {/* FIXTURE */}
-      {!loading && tab === "fixture" && (
-        <div className="space-y-4">
+      {!loading && tab === 'fixture' && (
+        <div className='space-y-4'>
           {fixtureGrouped.length === 0 ? (
-            <div className="text-center bg-white border rounded-2xl p-8 shadow-sm">
-              <div className="text-4xl mb-2">📅</div>
-              <p className="text-gray-600">No hay partidos próximos.</p>
+            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
+              <div className='text-4xl mb-2'>📅</div>
+              <p className='text-gray-600'>No hay partidos próximos.</p>
             </div>
           ) : (
             fixtureGrouped.map(({ dateKey, matches }) => (
-              <div key={dateKey} className="space-y-2">
-                <div className="text-sm text-gray-500">
-                  {dateKey === "Sin fecha"
-                    ? "Sin fecha"
+              <div key={dateKey} className='space-y-2'>
+                <div className='text-sm text-gray-500'>
+                  {dateKey === 'Sin fecha'
+                    ? 'Sin fecha'
                     : labelFromYMD(dateKey)}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                   {matches.map((p) => (
                     <MatchRow
                       key={p.id}
@@ -3453,33 +3482,33 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       )}
 
       {/* RESULTADOS (agrupados por grupo) */}
-      {!loading && tab === "resultados" && (
+      {!loading && tab === 'resultados' && (
         <>
           {resultados.length === 0 ? (
-            <div className="text-center bg-white border rounded-2xl p-8 shadow-sm">
-              <div className="text-4xl mb-2">🏀</div>
-              <p className="text-gray-600">Todavía no hay resultados.</p>
+            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
+              <div className='text-4xl mb-2'>🏀</div>
+              <p className='text-gray-600'>Todavía no hay resultados.</p>
             </div>
           ) : (
-            <div className="space-y-5">
+            <div className='space-y-5'>
               {resultadosPorGrupo.map(({ grupo, matches }) => (
-                <div key={grupo} className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-900 text-white">
-                      {grupo === "SIN_GRUPO"
-                        ? "Sin grupo"
-                        : grupo === "INTERZONAL"
-                        ? "Interzonal"
+                <div key={grupo} className='space-y-2'>
+                  <div className='flex items-center gap-2'>
+                    <span className='inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-900 text-white'>
+                      {grupo === 'SIN_GRUPO'
+                        ? 'Sin grupo'
+                        : grupo === 'INTERZONAL'
+                        ? 'Interzonal'
                         : `Grupo ${grupo}`}
                     </span>
 
-                    <span className="text-sm text-gray-500">
+                    <span className='text-sm text-gray-500'>
                       {matches.length} resultado
-                      {matches.length !== 1 ? "s" : ""}
+                      {matches.length !== 1 ? 's' : ''}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                     {matches.map((p) => (
                       <MatchRow
                         key={p.id}
@@ -3509,44 +3538,44 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       )}
 
       {/* POSICIONES */}
-      {!loading && tab === "posiciones" && (
+      {!loading && tab === 'posiciones' && (
         <>
           {gruposActivos.length >= 2 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               {gruposActivos.map((g) => (
                 <div
                   key={g}
-                  className="rounded-2xl bg-white p-4 shadow-sm border"
+                  className='rounded-2xl bg-white p-4 shadow-sm border'
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-lg font-semibold">Grupo {g}</div>
+                  <div className='flex items-center justify-between mb-3'>
+                    <div className='text-lg font-semibold'>Grupo {g}</div>
                     {canManage && (
                       <button
                         onClick={() => abrirModalFixtureGrupo(g)}
-                        className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50 text-sm"
+                        className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50 text-sm'
                       >
                         Programar grupo
                       </button>
                     )}
                   </div>
-                  <div className="text-sm text-gray-500 mb-2">
-                    {equiposPorGrupo[g]?.map((e) => e.nombre).join(" · ") ||
-                      "Sin equipos"}
+                  <div className='text-sm text-gray-500 mb-2'>
+                    {equiposPorGrupo[g]?.map((e) => e.nombre).join(' · ') ||
+                      'Sin equipos'}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[680px] text-sm">
-                      <thead className="bg-gray-50">
-                        <tr className="text-gray-600">
-                          <th className="text-left px-4 py-2 w-10">#</th>
-                          <th className="text-left px-4 py-2">Equipo</th>
-                          <th className="text-center px-2 py-2 w-14">PJ</th>
-                          <th className="text-center px-2 py-2 w-14">PG</th>
-                          <th className="text-center px-2 py-2 w-14">PP</th>
+                  <div className='overflow-x-auto'>
+                    <table className='min-w-[680px] text-sm'>
+                      <thead className='bg-gray-50'>
+                        <tr className='text-gray-600'>
+                          <th className='text-left px-4 py-2 w-10'>#</th>
+                          <th className='text-left px-4 py-2'>Equipo</th>
+                          <th className='text-center px-2 py-2 w-14'>PJ</th>
+                          <th className='text-center px-2 py-2 w-14'>PG</th>
+                          <th className='text-center px-2 py-2 w-14'>PP</th>
                           {/* 👇 ya no ocultamos en mobile */}
-                          <th className="text-center px-2 py-2 w-16">PF</th>
-                          <th className="text-center px-2 py-2 w-16">PC</th>
-                          <th className="text-center px-2 py-2 w-16">DIF</th>
-                          <th className="text-center px-2 py-2 w-16">PTS</th>
+                          <th className='text-center px-2 py-2 w-16'>PF</th>
+                          <th className='text-center px-2 py-2 w-16'>PC</th>
+                          <th className='text-center px-2 py-2 w-16'>DIF</th>
+                          <th className='text-center px-2 py-2 w-16'>PTS</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3555,38 +3584,38 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                           return (
                             <tr
                               key={`${g}-${t.id}`}
-                              className="border-t odd:bg-white even:bg-gray-50"
+                              className='border-t odd:bg-white even:bg-gray-50'
                             >
-                              <td className="px-4 py-2">{i + 1}</td>
-                              <td className="px-4 py-2">
-                                <div className="flex items-center gap-2 min-w-0">
+                              <td className='px-4 py-2'>{i + 1}</td>
+                              <td className='px-4 py-2'>
+                                <div className='flex items-center gap-2 min-w-0'>
                                   <Avatar
                                     name={t.nombre}
                                     logoUrl={team?.logoUrl}
                                     size={20}
                                   />
-                                  <span className="truncate">{t.nombre}</span>
+                                  <span className='truncate'>{t.nombre}</span>
                                 </div>
                               </td>
-                              <td className="px-2 py-2 text-center whitespace-nowrap">
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
                                 {t.pj}
                               </td>
-                              <td className="px-2 py-2 text-center whitespace-nowrap">
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
                                 {t.pg}
                               </td>
-                              <td className="px-2 py-2 text-center whitespace-nowrap">
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
                                 {t.pp}
                               </td>
-                              <td className="px-2 py-2 text-center whitespace-nowrap">
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
                                 {t.pf}
                               </td>
-                              <td className="px-2 py-2 text-center whitespace-nowrap">
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
                                 {t.pc}
                               </td>
-                              <td className="px-2 py-2 text-center whitespace-nowrap">
+                              <td className='px-2 py-2 text-center whitespace-nowrap'>
                                 {t.dif}
                               </td>
-                              <td className="px-2 py-2 text-center font-semibold whitespace-nowrap">
+                              <td className='px-2 py-2 text-center font-semibold whitespace-nowrap'>
                                 {t.pts}
                               </td>
                             </tr>
@@ -3599,19 +3628,19 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               ))}
             </div>
           ) : (
-            <div className="bg-white rounded-2xl shadow-sm border overflow-x-auto">
-              <table className="min-w-[680px] sm:min-w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr className="text-gray-600">
-                    <th className="text-left px-4 py-2">#</th>
-                    <th className="text-left px-4 py-2">Equipo</th>
-                    <th className="text-center px-4 py-2">PJ</th>
-                    <th className="text-center px-4 py-2">PG</th>
-                    <th className="text-center px-4 py-2">PP</th>
-                    <th className="text-center px-4 py-2">PF</th>
-                    <th className="text-center px-4 py-2">PC</th>
-                    <th className="text-center px-4 py-2">DIF</th>
-                    <th className="text-center px-4 py-2">PTS</th>
+            <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
+              <table className='min-w-[680px] sm:min-w-full text-sm'>
+                <thead className='bg-gray-50'>
+                  <tr className='text-gray-600'>
+                    <th className='text-left px-4 py-2'>#</th>
+                    <th className='text-left px-4 py-2'>Equipo</th>
+                    <th className='text-center px-4 py-2'>PJ</th>
+                    <th className='text-center px-4 py-2'>PG</th>
+                    <th className='text-center px-4 py-2'>PP</th>
+                    <th className='text-center px-4 py-2'>PF</th>
+                    <th className='text-center px-4 py-2'>PC</th>
+                    <th className='text-center px-4 py-2'>DIF</th>
+                    <th className='text-center px-4 py-2'>PTS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3619,23 +3648,23 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     <tr>
                       <td
                         colSpan={9}
-                        className="text-center text-gray-500 px-4 py-6"
+                        className='text-center text-gray-500 px-4 py-6'
                       >
                         Sin datos aún.
                       </td>
                     </tr>
                   ) : (
                     posicionesGenerales.map((t, i) => (
-                      <tr key={t.id} className="border-t">
-                        <td className="px-4 py-2">{i + 1}</td>
-                        <td className="px-4 py-2">{t.nombre}</td>
-                        <td className="px-4 py-2 text-center">{t.pj}</td>
-                        <td className="px-4 py-2 text-center">{t.pg}</td>
-                        <td className="px-4 py-2 text-center">{t.pp}</td>
-                        <td className="px-4 py-2 text-center">{t.pf}</td>
-                        <td className="px-4 py-2 text-center">{t.pc}</td>
-                        <td className="px-4 py-2 text-center">{t.dif}</td>
-                        <td className="px-4 py-2 text-center font-semibold">
+                      <tr key={t.id} className='border-t'>
+                        <td className='px-4 py-2'>{i + 1}</td>
+                        <td className='px-4 py-2'>{t.nombre}</td>
+                        <td className='px-4 py-2 text-center'>{t.pj}</td>
+                        <td className='px-4 py-2 text-center'>{t.pg}</td>
+                        <td className='px-4 py-2 text-center'>{t.pp}</td>
+                        <td className='px-4 py-2 text-center'>{t.pf}</td>
+                        <td className='px-4 py-2 text-center'>{t.pc}</td>
+                        <td className='px-4 py-2 text-center'>{t.dif}</td>
+                        <td className='px-4 py-2 text-center font-semibold'>
                           {t.pts}
                         </td>
                       </tr>
@@ -3649,67 +3678,67 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       )}
 
       {/* POSICIONES – COPAS (Oro / Plata / Bronce) */}
-      {!loading && tab === "pos-copas" && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-xl">Posiciones por copa</h3>
+      {!loading && tab === 'pos-copas' && (
+        <div className='space-y-4'>
+          <h3 className='font-semibold text-xl'>Posiciones por copa</h3>
 
           {[
             {
-              key: "copa-oro",
-              title: "Copa Oro",
-              ribbonFrom: "from-amber-500",
-              ribbonTo: "to-yellow-500",
+              key: 'copa-oro',
+              title: 'Copa Oro',
+              ribbonFrom: 'from-amber-500',
+              ribbonTo: 'to-yellow-500',
             },
             {
-              key: "copa-plata",
-              title: "Copa Plata",
-              ribbonFrom: "from-slate-500",
-              ribbonTo: "to-gray-500",
+              key: 'copa-plata',
+              title: 'Copa Plata',
+              ribbonFrom: 'from-slate-500',
+              ribbonTo: 'to-gray-500',
             },
             {
-              key: "copa-bronce",
-              title: "Copa Bronce",
-              ribbonFrom: "from-orange-500",
-              ribbonTo: "to-amber-600",
+              key: 'copa-bronce',
+              title: 'Copa Bronce',
+              ribbonFrom: 'from-orange-500',
+              ribbonTo: 'to-amber-600',
             },
           ].map(({ key, title, ribbonFrom, ribbonTo }) => (
             <div
               key={key}
-              className="rounded-2xl border shadow-sm bg-white overflow-hidden"
+              className='rounded-2xl border shadow-sm bg-white overflow-hidden'
             >
               {/* header con cintillo */}
               <div
                 className={`px-4 py-3 border-b bg-gradient-to-r ${ribbonFrom} ${ribbonTo} text-white`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-black/20 text-xs">
+                <div className='flex items-center gap-2'>
+                  <span className='inline-flex items-center px-2 py-0.5 rounded-full bg-black/20 text-xs'>
                     Tabla
                   </span>
-                  <h4 className="font-semibold">{title}</h4>
+                  <h4 className='font-semibold'>{title}</h4>
                 </div>
               </div>
 
               {posicionesCopas[key].length === 0 ? (
                 /* estado vacío */
-                <div className="px-6 py-10 text-center text-gray-500">
-                  <div className="text-4xl mb-2">📭</div>
+                <div className='px-6 py-10 text-center text-gray-500'>
+                  <div className='text-4xl mb-2'>📭</div>
                   <div>Sin datos aún.</div>
                 </div>
               ) : (
                 /* tabla */
-                <div className="overflow-x-auto">
-                  <table className="min-w-[680px] text-sm">
-                    <thead className="bg-gray-50">
-                      <tr className="text-gray-600">
-                        <th className="text-left px-4 py-2 w-10">#</th>
-                        <th className="text-left px-4 py-2">Equipo</th>
-                        <th className="text-center px-2 py-2 w-14">PJ</th>
-                        <th className="text-center px-2 py-2 w-14">PG</th>
-                        <th className="text-center px-2 py-2 w-14">PP</th>
-                        <th className="text-center px-2 py-2 w-16">PF</th>
-                        <th className="text-center px-2 py-2 w-16">PC</th>
-                        <th className="text-center px-2 py-2 w-16">DIF</th>
-                        <th className="text-center px-2 py-2 w-16">PTS</th>
+                <div className='overflow-x-auto'>
+                  <table className='min-w-[680px] text-sm'>
+                    <thead className='bg-gray-50'>
+                      <tr className='text-gray-600'>
+                        <th className='text-left px-4 py-2 w-10'>#</th>
+                        <th className='text-left px-4 py-2'>Equipo</th>
+                        <th className='text-center px-2 py-2 w-14'>PJ</th>
+                        <th className='text-center px-2 py-2 w-14'>PG</th>
+                        <th className='text-center px-2 py-2 w-14'>PP</th>
+                        <th className='text-center px-2 py-2 w-16'>PF</th>
+                        <th className='text-center px-2 py-2 w-16'>PC</th>
+                        <th className='text-center px-2 py-2 w-16'>DIF</th>
+                        <th className='text-center px-2 py-2 w-16'>PTS</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3718,26 +3747,26 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         return (
                           <tr
                             key={`${key}-${t.id}`}
-                            className="border-t odd:bg-white even:bg-gray-50"
+                            className='border-t odd:bg-white even:bg-gray-50'
                           >
-                            <td className="px-4 py-2">{i + 1}</td>
-                            <td className="px-4 py-2">
-                              <div className="flex items-center gap-2 min-w-0">
+                            <td className='px-4 py-2'>{i + 1}</td>
+                            <td className='px-4 py-2'>
+                              <div className='flex items-center gap-2 min-w-0'>
                                 <Avatar
                                   name={t.nombre}
                                   logoUrl={team?.logoUrl}
                                   size={20}
                                 />
-                                <span className="truncate">{t.nombre}</span>
+                                <span className='truncate'>{t.nombre}</span>
                               </div>
                             </td>
-                            <td className="px-2 py-2 text-center">{t.pj}</td>
-                            <td className="px-2 py-2 text-center">{t.pg}</td>
-                            <td className="px-2 py-2 text-center">{t.pp}</td>
-                            <td className="px-2 py-2 text-center">{t.pf}</td>
-                            <td className="px-2 py-2 text-center">{t.pc}</td>
-                            <td className="px-2 py-2 text-center">{t.dif}</td>
-                            <td className="px-2 py-2 text-center font-semibold">
+                            <td className='px-2 py-2 text-center'>{t.pj}</td>
+                            <td className='px-2 py-2 text-center'>{t.pg}</td>
+                            <td className='px-2 py-2 text-center'>{t.pp}</td>
+                            <td className='px-2 py-2 text-center'>{t.pf}</td>
+                            <td className='px-2 py-2 text-center'>{t.pc}</td>
+                            <td className='px-2 py-2 text-center'>{t.dif}</td>
+                            <td className='px-2 py-2 text-center font-semibold'>
                               {t.pts}
                             </td>
                           </tr>
@@ -3753,17 +3782,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       )}
 
       {/* GOLEADORES */}
-      {!loading && tab === "goleadores" && (
-        <div className="bg-white rounded-2xl shadow-sm border overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr className="text-gray-600">
-                <th className="text-left px-4 py-2">#</th>
-                <th className="text-left px-4 py-2">Jugador</th>
-                <th className="text-left px-4 py-2">Equipo</th>
-                <th className="text-center px-4 py-2">PTS tot</th>
-                <th className="text-center px-4 py-2">PJ</th>
-                <th className="text-center px-4 py-2">Prom.</th>
+      {!loading && tab === 'goleadores' && (
+        <div className='bg-white rounded-2xl shadow-sm border overflow-x-auto'>
+          <table className='min-w-full text-sm'>
+            <thead className='bg-gray-50'>
+              <tr className='text-gray-600'>
+                <th className='text-left px-4 py-2'>#</th>
+                <th className='text-left px-4 py-2'>Jugador</th>
+                <th className='text-left px-4 py-2'>Equipo</th>
+                <th className='text-center px-4 py-2'>PTS tot</th>
+                <th className='text-center px-4 py-2'>PJ</th>
+                <th className='text-center px-4 py-2'>Prom.</th>
               </tr>
             </thead>
             <tbody>
@@ -3771,23 +3800,23 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 <tr>
                   <td
                     colSpan={6}
-                    className="text-center text-gray-500 px-4 py-6"
+                    className='text-center text-gray-500 px-4 py-6'
                   >
                     Todavía no hay máximos anotadores cargados.
                   </td>
                 </tr>
               ) : (
                 goleadores.map((g, i) => (
-                  <tr key={`${g.equipoId}-${g.nombre}`} className="border-t">
-                    <td className="px-4 py-2">{i + 1}</td>
-                    <td className="px-4 py-2">{g.nombre}</td>
-                    <td className="px-4 py-2">{g.equipo}</td>
-                    <td className="px-4 py-2 text-center font-semibold">
+                  <tr key={`${g.equipoId}-${g.nombre}`} className='border-t'>
+                    <td className='px-4 py-2'>{i + 1}</td>
+                    <td className='px-4 py-2'>{g.nombre}</td>
+                    <td className='px-4 py-2'>{g.equipo}</td>
+                    <td className='px-4 py-2 text-center font-semibold'>
                       {g.total}
                     </td>
-                    <td className="px-4 py-2 text-center">{g.pj}</td>
-                    <td className="px-4 py-2 text-center">
-                      {g.pj ? (g.total / g.pj).toFixed(1) : "—"}
+                    <td className='px-4 py-2 text-center'>{g.pj}</td>
+                    <td className='px-4 py-2 text-center'>
+                      {g.pj ? (g.total / g.pj).toFixed(1) : '—'}
                     </td>
                   </tr>
                 ))
@@ -3798,18 +3827,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       )}
 
       {/* EQUIPOS */}
-      {!loading && tab === "equipos" && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-600">
+      {!loading && tab === 'equipos' && (
+        <div className='space-y-3'>
+          <div className='flex items-center justify-between'>
+            <div className='text-sm text-gray-600'>
               {equipos.length} equipos
             </div>
             {canManage && (
               <button
                 onClick={() => setOpenTeam(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-xl text-white
+                className='inline-flex items-center gap-2 px-3 py-2 text-sm rounded-xl text-white
                bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700
-               whitespace-nowrap shrink-0"
+               whitespace-nowrap shrink-0'
               >
                 Nuevo equipo
               </button>
@@ -3817,27 +3846,27 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
           </div>
 
           {equipos.length === 0 ? (
-            <div className="text-center bg-white border rounded-2xl p-8 shadow-sm">
-              <div className="text-4xl mb-2">👥</div>
-              <p className="text-gray-600">Todavía no hay equipos.</p>
+            <div className='text-center bg-white border rounded-2xl p-8 shadow-sm'>
+              <div className='text-4xl mb-2'>👥</div>
+              <p className='text-gray-600'>Todavía no hay equipos.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'>
               {equipos.map((e) => (
                 <div
                   key={e.id}
-                  className="bg-white rounded-2xl shadow-sm border p-4 flex flex-col gap-3"
+                  className='bg-white rounded-2xl shadow-sm border p-4 flex flex-col gap-3'
                 >
                   {/* Encabezado */}
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className='flex items-center gap-3 min-w-0'>
                     <Avatar name={e.nombre} logoUrl={e.logoUrl} size={28} />
-                    <div className="font-medium truncate">{e.nombre}</div>
+                    <div className='font-medium truncate'>{e.nombre}</div>
                     {e.grupo ? (
-                      <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      <span className='ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700'>
                         Grupo {String(e.grupo).toUpperCase()}
                       </span>
                     ) : (
-                      <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-50 text-gray-500">
+                      <span className='ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-50 text-gray-500'>
                         Sin grupo
                       </span>
                     )}
@@ -3845,22 +3874,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
                   {/* Footer: editar / borrar */}
                   {canManage && (
-                    <div className="flex items-center justify-end gap-2 pt-1">
+                    <div className='flex items-center justify-end gap-2 pt-1'>
                       <button
                         onClick={() => abrirEditarEquipo(e)}
                         className={`${BTN} ${BTN_SOFT}`}
-                        title="Editar equipo"
+                        title='Editar equipo'
                       >
                         <IconEdit />
-                        <span className="sm:hidden">Editar</span>
+                        <span className='sm:hidden'>Editar</span>
                       </button>
                       <button
                         onClick={() => borrarEquipo(e.id)}
                         className={`${BTN} ${BTN_DANGER}`}
-                        title="Eliminar equipo"
+                        title='Eliminar equipo'
                       >
                         <IconTrash />
-                        <span className="sm:hidden">Eliminar</span>
+                        <span className='sm:hidden'>Eliminar</span>
                       </button>
                     </div>
                   )}
@@ -3872,36 +3901,36 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       )}
 
       {/* FASE FINAL */}
-      {!loading && tab === "fase" && (
-        <div className="space-y-3">
+      {!loading && tab === 'fase' && (
+        <div className='space-y-3'>
           {/* Selector de modo */}
           {canManage && (
-            <div className="rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap">
-              <div className="font-semibold">Modo de fase:</div>
-              <div className="flex items-center gap-2">
+            <div className='rounded-2xl bg-white p-4 shadow-sm border flex items-center gap-3 flex-wrap'>
+              <div className='font-semibold'>Modo de fase:</div>
+              <div className='flex items-center gap-2'>
                 <button
                   className={`px-3 py-2 rounded-xl border ${
-                    modoFase === "copas"
-                      ? "bg-gray-900 text-white border-gray-900"
-                      : "bg-white hover:bg-gray-50"
+                    modoFase === 'copas'
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white hover:bg-gray-50'
                   }`}
-                  onClick={() => cambiarModo("copas")}
+                  onClick={() => cambiarModo('copas')}
                 >
                   Copas
                 </button>
                 <button
                   className={`px-3 py-2 rounded-xl border ${
-                    modoFase === "playoffs"
-                      ? "bg-gray-900 text-white border-gray-900"
-                      : "bg-white hover:bg-gray-50"
+                    modoFase === 'playoffs'
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white hover:bg-gray-50'
                   }`}
-                  onClick={() => cambiarModo("playoffs")}
+                  onClick={() => cambiarModo('playoffs')}
                 >
                   Playoffs
                 </button>
               </div>
               {!modoFase && (
-                <div className="text-sm text-gray-600">
+                <div className='text-sm text-gray-600'>
                   Elegí un modo para empezar.
                 </div>
               )}
@@ -3909,43 +3938,43 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
           )}
 
           {/* Panel COPAS */}
-          {modoFase === "copas" && (
-            <div className="rounded-2xl bg-white p-4 shadow-sm border">
-              <h3 className="font-semibold text-lg">
+          {modoFase === 'copas' && (
+            <div className='rounded-2xl bg-white p-4 shadow-sm border'>
+              <h3 className='font-semibold text-lg'>
                 Copas (Oro / Plata / Bronce)
               </h3>
-              <p className="text-sm text-gray-600">
+              <p className='text-sm text-gray-600'>
                 Definí cupos y equipos por copa. Generá el mini-fixture con
                 fecha/hora/cancha.
               </p>
-              <div className="mt-4 rounded-2xl border p-4 bg-white">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className='mt-4 rounded-2xl border p-4 bg-white'>
+                <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3'>
                   <div>
-                    <h4 className="font-semibold text-lg">
+                    <h4 className='font-semibold text-lg'>
                       Posiciones por copa
                     </h4>
-                    <p className="text-sm text-gray-600">
+                    <p className='text-sm text-gray-600'>
                       Mirá las tablas de Copa Oro, Plata y Bronce.
                     </p>
                   </div>
 
                   <button
                     onClick={irAPosCopas}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white 
-                 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                    className='inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white 
+                 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
                   >
                     Ver posiciones de copas
                   </button>
                 </div>
               </div>
               {/* Posiciones por copa → botón que lleva a la pestaña Posiciones */}
-              <div className="mt-4 rounded-2xl border p-4 bg-white">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className='mt-4 rounded-2xl border p-4 bg-white'>
+                <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3'>
                   <div>
-                    <h4 className="font-semibold text-lg">
+                    <h4 className='font-semibold text-lg'>
                       Posiciones de la fase de grupos
                     </h4>
-                    <p className="text-sm text-gray-600">
+                    <p className='text-sm text-gray-600'>
                       Consultá la tabla completa (general y por grupos) en la
                       pestaña Posiciones.
                     </p>
@@ -3953,123 +3982,123 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
                   <button
                     onClick={irAPosiciones}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white 
-                 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                    className='inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white 
+                 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
                   >
                     Ver tabla de posiciones
                   </button>
                 </div>
               </div>
               {/* OTROS BLOQUES (debajo, sin compartir fila con posiciones) */}
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="rounded-2xl border p-4">
-                  <div className="text-sm font-medium mb-2">Actual</div>
+              <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
+                <div className='rounded-2xl border p-4'>
+                  <div className='text-sm font-medium mb-2'>Actual</div>
                   {!faseCopas ? (
-                    <div className="text-xs text-gray-500">Sin asignar</div>
+                    <div className='text-xs text-gray-500'>Sin asignar</div>
                   ) : (
-                    <div className="space-y-2 text-sm">
+                    <div className='space-y-2 text-sm'>
                       <div>
-                        <b>Oro:</b>{" "}
+                        <b>Oro:</b>{' '}
                         {(faseCopas.oro || [])
                           .map((id) => equiposMap[id])
-                          .join(", ") || "-"}
+                          .join(', ') || '-'}
                       </div>
                       <div>
-                        <b>Plata:</b>{" "}
+                        <b>Plata:</b>{' '}
                         {(faseCopas.plata || [])
                           .map((id) => equiposMap[id])
-                          .join(", ") || "-"}
+                          .join(', ') || '-'}
                       </div>
                       <div>
-                        <b>Bronce:</b>{" "}
+                        <b>Bronce:</b>{' '}
                         {(faseCopas.bronce || [])
                           .map((id) => equiposMap[id])
-                          .join(", ") || "-"}
+                          .join(', ') || '-'}
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="rounded-2xl border p-4">
-                  <div className="text-sm font-medium mb-2">Sugerencia</div>
-                  <div className="space-y-2 text-sm">
+                <div className='rounded-2xl border p-4'>
+                  <div className='text-sm font-medium mb-2'>Sugerencia</div>
+                  <div className='space-y-2 text-sm'>
                     <div>
-                      <b>Oro:</b>{" "}
+                      <b>Oro:</b>{' '}
                       {(recomendacionCopas.oro || [])
                         .map((id) => equiposMap[id])
-                        .join(", ") || "-"}
+                        .join(', ') || '-'}
                     </div>
                     <div>
-                      <b>Plata:</b>{" "}
+                      <b>Plata:</b>{' '}
                       {(recomendacionCopas.plata || [])
                         .map((id) => equiposMap[id])
-                        .join(", ") || "-"}
+                        .join(', ') || '-'}
                     </div>
                     <div>
-                      <b>Bronce:</b>{" "}
+                      <b>Bronce:</b>{' '}
                       {(recomendacionCopas.bronce || [])
                         .map((id) => equiposMap[id])
-                        .join(", ") || "-"}
+                        .join(', ') || '-'}
                     </div>
                   </div>
                 </div>
 
                 {canManage && (
-                  <div className="rounded-2xl border p-4">
-                    <div className="text-sm font-medium mb-2">Acciones</div>
-                    <div className="flex flex-col gap-2">
+                  <div className='rounded-2xl border p-4'>
+                    <div className='text-sm font-medium mb-2'>Acciones</div>
+                    <div className='flex flex-col gap-2'>
                       <button
                         onClick={asignarCopasAuto}
-                        className="px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black"
+                        className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                       >
                         Asignar recomendación
                       </button>
                       <button
                         onClick={abrirCopasManual}
-                        className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+                        className='px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
                       >
                         Elegir manualmente…
                       </button>
                       <button
                         onClick={autoRellenarCopas}
-                        className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm"
+                        className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                       >
-                        Autorrellenar{" "}
+                        Autorrellenar{' '}
                         {gruposActivos.length >= 2
-                          ? "por grupos"
-                          : "por posiciones"}
+                          ? 'por grupos'
+                          : 'por posiciones'}
                       </button>
-                      <div className="flex flex-wrap gap-2 pt-1">
+                      <div className='flex flex-wrap gap-2 pt-1'>
                         <button
                           onClick={() =>
                             abrirModalFixtureCopa(
-                              "copa-oro",
+                              'copa-oro',
                               faseCopas?.oro || []
                             )
                           }
-                          className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm"
+                          className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                         >
                           Mini-fixture (Oro)
                         </button>
                         <button
                           onClick={() =>
                             abrirModalFixtureCopa(
-                              "copa-plata",
+                              'copa-plata',
                               faseCopas?.plata || []
                             )
                           }
-                          className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm"
+                          className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                         >
                           Mini-fixture (Plata)
                         </button>
                         <button
                           onClick={() =>
                             abrirModalFixtureCopa(
-                              "copa-bronce",
+                              'copa-bronce',
                               faseCopas?.bronce || []
                             )
                           }
-                          className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm"
+                          className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                         >
                           Mini-fixture (Bronce)
                         </button>
@@ -4077,24 +4106,24 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     </div>
                   </div>
                 )}
-              </div>{" "}
+              </div>{' '}
               {/* ← CIERRE de la grilla de 3 columnas */}
               {/* Acciones debajo (a todo el ancho en mobile) */}
-              {(cupMatches["copa-oro"].length ||
-                cupMatches["copa-plata"].length ||
-                cupMatches["copa-bronce"].length) && (
-                <div className="mt-4 space-y-4">
-                  {["copa-oro", "copa-plata", "copa-bronce"].map((ck) =>
+              {(cupMatches['copa-oro'].length ||
+                cupMatches['copa-plata'].length ||
+                cupMatches['copa-bronce'].length) && (
+                <div className='mt-4 space-y-4'>
+                  {['copa-oro', 'copa-plata', 'copa-bronce'].map((ck) =>
                     cupMatches[ck].length ? (
-                      <div key={ck} className="space-y-2">
-                        <div className="text-sm font-medium text-gray-700">
-                          {ck === "copa-oro"
-                            ? "Copa Oro"
-                            : ck === "copa-plata"
-                            ? "Copa Plata"
-                            : "Copa Bronce"}
+                      <div key={ck} className='space-y-2'>
+                        <div className='text-sm font-medium text-gray-700'>
+                          {ck === 'copa-oro'
+                            ? 'Copa Oro'
+                            : ck === 'copa-plata'
+                            ? 'Copa Plata'
+                            : 'Copa Bronce'}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                           {cupMatches[ck].map((p) => (
                             <MatchRow
                               key={p.id}
@@ -4107,13 +4136,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                               ts={p.dia}
                               cancha={p.cancha}
                               canManage={canManage}
-                              isResult={p.estado === "finalizado"}
+                              isResult={p.estado === 'finalizado'}
                               tops={p.tops}
                               onEditScore={() => openResultado(p)}
                               onEditMeta={() => openEditarMeta(p)}
                               onDelete={() => solicitarBorrarPartido(p)}
                               onRevert={
-                                p.estado === "finalizado"
+                                p.estado === 'finalizado'
                                   ? () => revertirResultado(p.id)
                                   : undefined
                               }
@@ -4129,13 +4158,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
           )}
 
           {/* Panel PLAYOFFS */}
-          {modoFase === "playoffs" && (
-            <div className="rounded-2xl bg-white p-4 shadow-sm border">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {modoFase === 'playoffs' && (
+            <div className='rounded-2xl bg-white p-4 shadow-sm border'>
+              <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
                 <div>
-                  <h3 className="font-semibold text-lg">Playoffs</h3>
+                  <h3 className='font-semibold text-lg'>Playoffs</h3>
                   {canManage && (
-                    <p className="text-sm text-gray-600">
+                    <p className='text-sm text-gray-600'>
                       Elegí cuántos entran (2, 4, 8, 16), programá hora/cancha y
                       se arman cruces por siembra.
                     </p>
@@ -4143,8 +4172,8 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
 
                 {canManage && (
-                  <div className="w-full sm:w-auto">
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                  <div className='w-full sm:w-auto'>
+                    <div className='grid grid-cols-2 gap-2 sm:flex sm:items-center'>
                       <button
                         onClick={abrirPOConfig}
                         className={`${BTN} ${BTN_PRIMARY} ${BTN_FULL} from-indigo-600 to-purple-600`}
@@ -4171,14 +4200,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                       )}
 
                       {esU17 && (
-  <button
-    onClick={abrirSembrarU17UIModal}
-    className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
-  >
-    Sembrar U17F
-  </button>
-)}
-
+                        <button
+                          onClick={abrirSembrarU17UIModal}
+                          className={`${BTN} ${BTN_SOFT} ${BTN_FULL} border-2`}
+                        >
+                          Sembrar U17F
+                        </button>
+                      )}
 
                       {fasePartidos.length > 0 && (
                         <button
@@ -4194,18 +4222,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               </div>
 
               {faseGrouped.length === 0 ? (
-                <div className="text-center bg-white border rounded-2xl p-8 shadow-sm mt-3">
-                  <div className="text-4xl mb-2">🏆</div>
-                  <p className="text-gray-600">Aún no hay cruces.</p>
+                <div className='text-center bg-white border rounded-2xl p-8 shadow-sm mt-3'>
+                  <div className='text-4xl mb-2'>🏆</div>
+                  <p className='text-gray-600'>Aún no hay cruces.</p>
                 </div>
               ) : (
-                <div className="mt-3 space-y-4">
+                <div className='mt-3 space-y-4'>
                   {faseGrouped.map(({ fase, matches }) => (
-                    <div key={fase} className="space-y-2">
-                      <div className="text-sm font-medium text-gray-700">
+                    <div key={fase} className='space-y-2'>
+                      <div className='text-sm font-medium text-gray-700'>
                         {faseLabels[fase] || fase}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                         {matches.map((p) => (
                           <MatchRow
                             key={p.id}
@@ -4218,13 +4246,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                             ts={p.dia}
                             cancha={p.cancha}
                             canManage={canManage}
-                            isResult={p.estado === "finalizado"}
+                            isResult={p.estado === 'finalizado'}
                             tops={p.tops}
                             onEditScore={() => openResultado(p)}
                             onEditMeta={() => openEditarMeta(p)}
                             onDelete={() => solicitarBorrarPartido(p)}
                             onRevert={
-                              p.estado === "finalizado"
+                              p.estado === 'finalizado'
                                 ? () => revertirResultado(p.id)
                                 : undefined
                             }
@@ -4245,60 +4273,60 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Cargar/Editar resultado */}
       {openResult && editingMatch && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={closeResultado}
         >
           <div
-            className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2"
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">Cargar resultado</h3>
-            <div className="text-sm text-gray-600 mb-3">
+            <h3 className='text-lg font-semibold mb-3'>Cargar resultado</h3>
+            <div className='text-sm text-gray-600 mb-3'>
               <EquipoTag
-                nombre={equiposMap[editingMatch.localId] || "Local"}
+                nombre={equiposMap[editingMatch.localId] || 'Local'}
                 logoUrl={
                   equipos.find((e) => e.id === editingMatch.localId)?.logoUrl
                 }
-              />{" "}
-              vs{" "}
+              />{' '}
+              vs{' '}
               <EquipoTag
-                nombre={equiposMap[editingMatch.visitanteId] || "Visitante"}
+                nombre={equiposMap[editingMatch.visitanteId] || 'Visitante'}
                 logoUrl={
                   equipos.find((e) => e.id === editingMatch.visitanteId)
                     ?.logoUrl
                 }
               />
-              <div className="text-xs mt-1">
+              <div className='text-xs mt-1'>
                 {fmtFecha(editingMatch.dia)}
-                {editingMatch.cancha ? ` · ${editingMatch.cancha}` : ""}
+                {editingMatch.cancha ? ` · ${editingMatch.cancha}` : ''}
               </div>
             </div>
 
-            <form onSubmit={saveResultado} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={saveResultado} className='space-y-3'>
+              <div className='grid grid-cols-2 gap-3'>
                 <div>
-                  <label className="text-xs text-gray-600">
-                    {equiposMap[editingMatch.localId] || "Local"}
+                  <label className='text-xs text-gray-600'>
+                    {equiposMap[editingMatch.localId] || 'Local'}
                   </label>
                   <input
-                    type="number"
+                    type='number'
                     min={0}
-                    inputMode="numeric"
-                    className="mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200"
+                    inputMode='numeric'
+                    className='mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200'
                     value={scoreLocal}
                     onChange={(e) => setScoreLocal(e.target.value)}
                     required
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-600">
-                    {equiposMap[editingMatch.visitanteId] || "Visitante"}
+                  <label className='text-xs text-gray-600'>
+                    {equiposMap[editingMatch.visitanteId] || 'Visitante'}
                   </label>
                   <input
-                    type="number"
+                    type='number'
                     min={0}
-                    inputMode="numeric"
-                    className="mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200"
+                    inputMode='numeric'
+                    className='mt-1 w-full rounded-xl border px-3 py-3 text-base outline-none focus:ring-2 focus:ring-blue-200'
                     value={scoreVisitante} // <-- antes decía scoreLocal
                     onChange={(e) => setScoreVisitante(e.target.value)} // <-- antes setScoreLocal
                     required
@@ -4307,63 +4335,63 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               </div>
 
               {/* Máximos anotadores */}
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-gray-600 mb-1">
-                    Máximo anotador del equipo:{" "}
-                    {equiposMap[editingMatch.localId] || "Local"}
+              <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                <div className='rounded-xl border p-3'>
+                  <div className='text-xs text-gray-600 mb-1'>
+                    Máximo anotador del equipo:{' '}
+                    {equiposMap[editingMatch.localId] || 'Local'}
                   </div>
                   <input
-                    className="w-full rounded-xl border px-3 py-2 mb-2"
-                    placeholder="Jugador (opcional)"
+                    className='w-full rounded-xl border px-3 py-2 mb-2'
+                    placeholder='Jugador (opcional)'
                     value={topLocalName}
                     onChange={(e) => setTopLocalName(e.target.value)}
                   />
                   <input
-                    type="number"
+                    type='number'
                     min={0}
-                    inputMode="numeric"
-                    className="w-full rounded-xl border px-3 py-2"
-                    placeholder="Puntos"
+                    inputMode='numeric'
+                    className='w-full rounded-xl border px-3 py-2'
+                    placeholder='Puntos'
                     value={topLocalPts}
                     onChange={(e) => setTopLocalPts(e.target.value)}
                   />
                 </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-gray-600 mb-1">
-                    Máximo anotador del equipo:{" "}
-                    {equiposMap[editingMatch.visitanteId] || "Visitante"}
+                <div className='rounded-xl border p-3'>
+                  <div className='text-xs text-gray-600 mb-1'>
+                    Máximo anotador del equipo:{' '}
+                    {equiposMap[editingMatch.visitanteId] || 'Visitante'}
                   </div>
                   <input
-                    className="w-full rounded-xl border px-3 py-2 mb-2"
-                    placeholder="Jugador (opcional)"
+                    className='w-full rounded-xl border px-3 py-2 mb-2'
+                    placeholder='Jugador (opcional)'
                     value={topVisName}
                     onChange={(e) => setTopVisName(e.target.value)}
                   />
                   <input
-                    type="number"
+                    type='number'
                     min={0}
-                    inputMode="numeric"
-                    className="w-full rounded-xl border px-3 py-2"
-                    placeholder="Puntos"
+                    inputMode='numeric'
+                    className='w-full rounded-xl border px-3 py-2'
+                    placeholder='Puntos'
                     value={topVisPts}
                     onChange={(e) => setTopVisPts(e.target.value)}
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={closeResultado}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  type='submit'
                   disabled={saving}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60"
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60'
                 >
                   {saving && <Spinner />} Guardar
                 </button>
@@ -4375,36 +4403,36 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
       {openPODefs && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenPODefs(false)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-1">
+            <h3 className='text-lg font-semibold mb-1'>
               Programar definiciones
             </h3>
-            <p className="text-sm text-gray-600 mb-3">
+            <p className='text-sm text-gray-600 mb-3'>
               Primero 3.º puesto (arriba) y luego la Final (abajo).
             </p>
 
-            <form onSubmit={guardarDefsProgramacion} className="space-y-5">
+            <form onSubmit={guardarDefsProgramacion} className='space-y-5'>
               {/* 3.º PUESTO */}
-              <div className="rounded-xl border p-4">
-                <div className="font-medium mb-2">{poDefsForm.labelTercer}</div>
-                <div className="text-sm text-gray-600 mb-2">
+              <div className='rounded-xl border p-4'>
+                <div className='font-medium mb-2'>{poDefsForm.labelTercer}</div>
+                <div className='text-sm text-gray-600 mb-2'>
                   <EquipoTag
-                    nombre={equiposMap[poDefsForm.tercer.localId] || "Local"}
+                    nombre={equiposMap[poDefsForm.tercer.localId] || 'Local'}
                     logoUrl={
                       equipos.find((e) => e.id === poDefsForm.tercer.localId)
                         ?.logoUrl
                     }
-                  />{" "}
-                  vs{" "}
+                  />{' '}
+                  vs{' '}
                   <EquipoTag
                     nombre={
-                      equiposMap[poDefsForm.tercer.visitanteId] || "Visitante"
+                      equiposMap[poDefsForm.tercer.visitanteId] || 'Visitante'
                     }
                     logoUrl={
                       equipos.find(
@@ -4413,12 +4441,12 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     }
                   />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                   <div>
-                    <label className="text-sm">Fecha & hora</label>
+                    <label className='text-sm'>Fecha & hora</label>
                     <input
-                      type="datetime-local"
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      type='datetime-local'
+                      className='mt-1 w-full rounded-xl border px-3 py-2'
                       value={poDefsForm.tercer.fecha}
                       onChange={(e) =>
                         setPoDefsForm((f) => ({
@@ -4430,9 +4458,9 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     />
                   </div>
                   <div>
-                    <label className="text-sm">Cancha</label>
+                    <label className='text-sm'>Cancha</label>
                     <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      className='mt-1 w-full rounded-xl border px-3 py-2'
                       value={poDefsForm.tercer.cancha}
                       onChange={(e) =>
                         setPoDefsForm((f) => ({
@@ -4440,7 +4468,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                           tercer: { ...f.tercer, cancha: e.target.value },
                         }))
                       }
-                      placeholder="Ej. Club A"
+                      placeholder='Ej. Club A'
                       required
                     />
                   </div>
@@ -4448,20 +4476,20 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               </div>
 
               {/* FINAL */}
-              <div className="rounded-xl border p-4">
-                <div className="font-medium mb-2">{poDefsForm.labelFinal}</div>
-                <div className="text-sm text-gray-600 mb-2">
+              <div className='rounded-xl border p-4'>
+                <div className='font-medium mb-2'>{poDefsForm.labelFinal}</div>
+                <div className='text-sm text-gray-600 mb-2'>
                   <EquipoTag
-                    nombre={equiposMap[poDefsForm.final.localId] || "Local"}
+                    nombre={equiposMap[poDefsForm.final.localId] || 'Local'}
                     logoUrl={
                       equipos.find((e) => e.id === poDefsForm.final.localId)
                         ?.logoUrl
                     }
-                  />{" "}
-                  vs{" "}
+                  />{' '}
+                  vs{' '}
                   <EquipoTag
                     nombre={
-                      equiposMap[poDefsForm.final.visitanteId] || "Visitante"
+                      equiposMap[poDefsForm.final.visitanteId] || 'Visitante'
                     }
                     logoUrl={
                       equipos.find((e) => e.id === poDefsForm.final.visitanteId)
@@ -4469,12 +4497,12 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     }
                   />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                   <div>
-                    <label className="text-sm">Fecha & hora</label>
+                    <label className='text-sm'>Fecha & hora</label>
                     <input
-                      type="datetime-local"
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      type='datetime-local'
+                      className='mt-1 w-full rounded-xl border px-3 py-2'
                       value={poDefsForm.final.fecha}
                       onChange={(e) =>
                         setPoDefsForm((f) => ({
@@ -4486,9 +4514,9 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     />
                   </div>
                   <div>
-                    <label className="text-sm">Cancha</label>
+                    <label className='text-sm'>Cancha</label>
                     <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      className='mt-1 w-full rounded-xl border px-3 py-2'
                       value={poDefsForm.final.cancha}
                       onChange={(e) =>
                         setPoDefsForm((f) => ({
@@ -4496,24 +4524,24 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                           final: { ...f.final, cancha: e.target.value },
                         }))
                       }
-                      placeholder="Ej. Club A"
+                      placeholder='Ej. Club A'
                       required
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2">
+              <div className='flex items-center justify-end gap-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenPODefs(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                 >
                   Guardar ambas
                 </button>
@@ -4526,26 +4554,26 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Programar siguiente cruce (Playoffs) */}
       {openPOProgram && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenPOProgram(false)}
         >
           <div
-            className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2"
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-1">
+            <h3 className='text-lg font-semibold mb-1'>
               Programar {poProgramForm.faseLabel}
             </h3>
-            <div className="text-sm text-gray-600 mb-3">
+            <div className='text-sm text-gray-600 mb-3'>
               <EquipoTag
-                nombre={equiposMap[poProgramForm.localId] || "Local"}
+                nombre={equiposMap[poProgramForm.localId] || 'Local'}
                 logoUrl={
                   equipos.find((e) => e.id === poProgramForm.localId)?.logoUrl
                 }
-              />{" "}
-              vs{" "}
+              />{' '}
+              vs{' '}
               <EquipoTag
-                nombre={equiposMap[poProgramForm.visitanteId] || "Visitante"}
+                nombre={equiposMap[poProgramForm.visitanteId] || 'Visitante'}
                 logoUrl={
                   equipos.find((e) => e.id === poProgramForm.visitanteId)
                     ?.logoUrl
@@ -4553,13 +4581,13 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               />
             </div>
 
-            <form onSubmit={guardarProgramacionSiguiente} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form onSubmit={guardarProgramacionSiguiente} className='space-y-3'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div>
-                  <label className="text-sm">Fecha & hora</label>
+                  <label className='text-sm'>Fecha & hora</label>
                   <input
-                    type="datetime-local"
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    type='datetime-local'
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={poProgramForm.fecha}
                     onChange={(e) =>
                       setPoProgramForm((f) => ({ ...f, fecha: e.target.value }))
@@ -4568,10 +4596,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                   />
                 </div>
                 <div>
-                  <label className="text-sm">Cancha</label>
+                  <label className='text-sm'>Cancha</label>
                   <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
-                    placeholder="Ej. Club A"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. Club A'
                     value={poProgramForm.cancha}
                     onChange={(e) =>
                       setPoProgramForm((f) => ({
@@ -4584,17 +4612,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenPOProgram(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                 >
                   Guardar
                 </button>
@@ -4606,48 +4634,48 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
       {openU13Seed && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenU13Seed(false)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-1">Sembrar U13F</h3>
-            <p className="text-sm text-gray-600 mb-3">
+            <h3 className='text-lg font-semibold mb-1'>Sembrar U13F</h3>
+            <p className='text-sm text-gray-600 mb-3'>
               Definí día/hora y cancha para reclasificación y semifinales.
             </p>
 
-            <form onSubmit={guardarSembradoU13} className="space-y-4">
+            <form onSubmit={guardarSembradoU13} className='space-y-4'>
               {u13Pairs.map((p, idx) => (
-                <div key={idx} className="rounded-xl border p-3">
-                  <div className="font-medium mb-1">{p.label}</div>
-                  <div className="text-xs text-gray-600 mb-2">
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='font-medium mb-1'>{p.label}</div>
+                  <div className='text-xs text-gray-600 mb-2'>
                     <EquipoTag
-                      nombre={equiposMap[p.localId] || "Local"}
+                      nombre={equiposMap[p.localId] || 'Local'}
                       logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
-                    />{" "}
-                    vs{" "}
+                    />{' '}
+                    vs{' '}
                     {p.visitanteId ? (
                       <EquipoTag
-                        nombre={equiposMap[p.visitanteId] || "Visitante"}
+                        nombre={equiposMap[p.visitanteId] || 'Visitante'}
                         logoUrl={
                           equipos.find((e) => e.id === p.visitanteId)?.logoUrl
                         }
                       />
                     ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                      <span className='inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700'>
                         Ganador B4–B5
                       </span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                     <div>
-                      <label className="text-sm">Fecha & hora</label>
+                      <label className='text-sm'>Fecha & hora</label>
                       <input
-                        type="datetime-local"
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.fecha}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -4661,10 +4689,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                       />
                     </div>
                     <div>
-                      <label className="text-sm">Cancha</label>
+                      <label className='text-sm'>Cancha</label>
                       <input
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
-                        placeholder="Ej. Club A"
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
                         value={p.cancha}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -4681,17 +4709,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
               ))}
 
-              <div className="flex items-center justify-end gap-2">
+              <div className='flex items-center justify-end gap-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenU13Seed(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                 >
                   Crear cruces
                 </button>
@@ -4703,48 +4731,48 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
       {openU15Seed && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenU15Seed(false)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-1">Sembrar U15F</h3>
-            <p className="text-sm text-gray-600 mb-3">
+            <h3 className='text-lg font-semibold mb-1'>Sembrar U15F</h3>
+            <p className='text-sm text-gray-600 mb-3'>
               Definí día/hora y cancha para reclasificación y semifinales.
             </p>
 
-            <form onSubmit={guardarSembradoU15} className="space-y-4">
+            <form onSubmit={guardarSembradoU15} className='space-y-4'>
               {u15Pairs.map((p, idx) => (
-                <div key={idx} className="rounded-xl border p-3">
-                  <div className="font-medium mb-1">{p.label}</div>
-                  <div className="text-xs text-gray-600 mb-2">
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='font-medium mb-1'>{p.label}</div>
+                  <div className='text-xs text-gray-600 mb-2'>
                     <EquipoTag
-                      nombre={equiposMap[p.localId] || "Local"}
+                      nombre={equiposMap[p.localId] || 'Local'}
                       logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
-                    />{" "}
-                    vs{" "}
+                    />{' '}
+                    vs{' '}
                     {p.visitanteId ? (
                       <EquipoTag
-                        nombre={equiposMap[p.visitanteId] || "Visitante"}
+                        nombre={equiposMap[p.visitanteId] || 'Visitante'}
                         logoUrl={
                           equipos.find((e) => e.id === p.visitanteId)?.logoUrl
                         }
                       />
                     ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                      <span className='inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700'>
                         Ganador A4–A5
                       </span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                     <div>
-                      <label className="text-sm">Fecha & hora</label>
+                      <label className='text-sm'>Fecha & hora</label>
                       <input
-                        type="datetime-local"
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.fecha}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -4758,10 +4786,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                       />
                     </div>
                     <div>
-                      <label className="text-sm">Cancha</label>
+                      <label className='text-sm'>Cancha</label>
                       <input
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
-                        placeholder="Ej. Club A"
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
                         value={p.cancha}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -4778,17 +4806,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
               ))}
 
-              <div className="flex items-center justify-end gap-2">
+              <div className='flex items-center justify-end gap-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenU15Seed(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                 >
                   Crear cruces
                 </button>
@@ -4801,44 +4829,44 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Modal: Sembrar U17F */}
       {openU17Seed && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenU17Seed(false)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto"
+            className='w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-1">Sembrar U17 Femenino</h3>
-            <p className="text-sm text-gray-600 mb-3">
+            <h3 className='text-lg font-semibold mb-1'>Sembrar U17 Femenino</h3>
+            <p className='text-sm text-gray-600 mb-3'>
               Definí fecha y cancha para los 3 cruces iniciales (A vs B). Luego
               los triangulares Oro y Plata se generan automáticamente al cargar
               resultados.
             </p>
 
-            <form onSubmit={guardarSembradoU17} className="space-y-4">
+            <form onSubmit={guardarSembradoU17} className='space-y-4'>
               {u17Pairs.map((p, idx) => (
-                <div key={idx} className="rounded-xl border p-4">
-                  <div className="font-medium mb-2">{p.label}</div>
-                  <div className="text-sm text-gray-600 mb-2">
+                <div key={idx} className='rounded-xl border p-4'>
+                  <div className='font-medium mb-2'>{p.label}</div>
+                  <div className='text-sm text-gray-600 mb-2'>
                     <EquipoTag
-                      nombre={equiposMap[p.localId] || "Local"}
+                      nombre={equiposMap[p.localId] || 'Local'}
                       logoUrl={equipos.find((e) => e.id === p.localId)?.logoUrl}
-                    />{" "}
-                    vs{" "}
+                    />{' '}
+                    vs{' '}
                     <EquipoTag
-                      nombre={equiposMap[p.visitanteId] || "Visitante"}
+                      nombre={equiposMap[p.visitanteId] || 'Visitante'}
                       logoUrl={
                         equipos.find((e) => e.id === p.visitanteId)?.logoUrl
                       }
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                     <div>
-                      <label className="text-sm">Fecha & hora</label>
+                      <label className='text-sm'>Fecha & hora</label>
                       <input
-                        type="datetime-local"
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.fecha}
                         onChange={(e) =>
                           setU17Pairs((arr) =>
@@ -4851,9 +4879,9 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                       />
                     </div>
                     <div>
-                      <label className="text-sm">Cancha</label>
+                      <label className='text-sm'>Cancha</label>
                       <input
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.cancha}
                         onChange={(e) =>
                           setU17Pairs((arr) =>
@@ -4862,7 +4890,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                             )
                           )
                         }
-                        placeholder="Ej. Club A"
+                        placeholder='Ej. Club A'
                         required
                       />
                     </div>
@@ -4870,17 +4898,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
               ))}
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenU17Seed(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
                 >
                   <IconUpload /> Crear cruces
                 </button>
@@ -4893,27 +4921,27 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Nuevo partido */}
       {openMatch && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenMatch(false)}
         >
           <div
-            className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2"
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-1">Nuevo partido</h3>
+            <h3 className='text-lg font-semibold mb-1'>Nuevo partido</h3>
             {matchForm.interzonal && (
-              <div className="mb-2 inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow">
+              <div className='mb-2 inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow'>
                 Interzonal · A vs B
               </div>
             )}
 
-            <form onSubmit={guardarPartido} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form onSubmit={guardarPartido} className='space-y-3'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 {/* LOCAL */}
                 <div>
-                  <label className="text-sm">Local</label>
+                  <label className='text-sm'>Local</label>
                   <select
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={matchForm.localId}
                     onChange={(e) => {
                       const nextLocal = e.target.value;
@@ -4931,7 +4959,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         setMatchForm((f) => ({
                           ...f,
                           localId: nextLocal,
-                          visitanteId: "",
+                          visitanteId: '',
                         }));
                       } else {
                         setMatchForm((f) => ({ ...f, localId: nextLocal }));
@@ -4939,29 +4967,29 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     }}
                     required
                   >
-                    <option value="">Elegir…</option>
-                    {elegiblesPara("local").map((e) => {
+                    <option value=''>Elegir…</option>
+                    {elegiblesPara('local').map((e) => {
                       const gOpt = groupOf(e.id);
                       return (
                         <option key={e.id} value={e.id}>
-                          {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ""}
+                          {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ''}
                         </option>
                       );
                     })}
                   </select>
                   {/* chip de grupo del local */}
                   {matchForm.localId && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Grupo: {groupOf(matchForm.localId) || "—"}
+                    <div className='text-xs text-gray-500 mt-1'>
+                      Grupo: {groupOf(matchForm.localId) || '—'}
                     </div>
                   )}
                 </div>
 
                 {/* VISITANTE */}
                 <div>
-                  <label className="text-sm">Visitante</label>
+                  <label className='text-sm'>Visitante</label>
                   <select
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={matchForm.visitanteId}
                     onChange={(e) => {
                       const nextVis = e.target.value;
@@ -4979,7 +5007,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         setMatchForm((f) => ({
                           ...f,
                           visitanteId: nextVis,
-                          localId: "",
+                          localId: '',
                         }));
                       } else {
                         setMatchForm((f) => ({ ...f, visitanteId: nextVis }));
@@ -4987,20 +5015,20 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     }}
                     required
                   >
-                    <option value="">Elegir…</option>
-                    {elegiblesPara("visitante").map((e) => {
+                    <option value=''>Elegir…</option>
+                    {elegiblesPara('visitante').map((e) => {
                       const gOpt = groupOf(e.id);
                       return (
                         <option key={e.id} value={e.id}>
-                          {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ""}
+                          {e.nombre} {gOpt ? `· Grupo ${gOpt}` : ''}
                         </option>
                       );
                     })}
                   </select>
                   {/* chip de grupo del visitante */}
                   {matchForm.visitanteId && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Grupo: {groupOf(matchForm.visitanteId) || "—"}
+                    <div className='text-xs text-gray-500 mt-1'>
+                      Grupo: {groupOf(matchForm.visitanteId) || '—'}
                     </div>
                   )}
                 </div>
@@ -5008,8 +5036,8 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
               {/* AVISO cuando es obligatorio marcar Interzonal */}
               {requiereInterzonal && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2 text-sm flex items-center gap-2">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/20">
+                <div className='rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2 text-sm flex items-center gap-2'>
+                  <span className='inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/20'>
                     ⚠️
                   </span>
                   Los equipos elegidos son de <b>grupos distintos</b>. Debés
@@ -5018,10 +5046,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               )}
 
               {/* Toggle Interzonal, más bonito */}
-              <label className="flex items-start gap-3 rounded-2xl border px-3 py-3 bg-gradient-to-r from-sky-50 to-indigo-50">
+              <label className='flex items-start gap-3 rounded-2xl border px-3 py-3 bg-gradient-to-r from-sky-50 to-indigo-50'>
                 <input
-                  type="checkbox"
-                  className="mt-1 accent-indigo-600 w-4 h-4"
+                  type='checkbox'
+                  className='mt-1 accent-indigo-600 w-4 h-4'
                   checked={matchForm.interzonal}
                   onChange={(e) => {
                     const checked = e.target.checked;
@@ -5038,7 +5066,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         setMatchForm((f) => ({
                           ...f,
                           interzonal: true,
-                          visitanteId: "",
+                          visitanteId: '',
                         }));
                         return;
                       }
@@ -5046,28 +5074,28 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     setMatchForm((f) => ({ ...f, interzonal: checked }));
                   }}
                 />
-                <div className="flex-1">
-                  <div className="font-semibold text-gray-900">
+                <div className='flex-1'>
+                  <div className='font-semibold text-gray-900'>
                     Partido interzonal
                   </div>
-                  <div className="text-sm text-gray-700">
+                  <div className='text-sm text-gray-700'>
                     A vs B (grupos distintos). Si los equipos son de grupos
                     diferentes, <b>debe</b> estar marcado.
                   </div>
                   {matchForm.interzonal && (
-                    <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow">
+                    <span className='mt-2 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow'>
                       Interzonal activo
                     </span>
                   )}
                 </div>
               </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div>
-                  <label className="text-sm">Fecha & hora</label>
+                  <label className='text-sm'>Fecha & hora</label>
                   <input
-                    type="datetime-local"
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    type='datetime-local'
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={matchForm.fecha}
                     onChange={(e) =>
                       setMatchForm((f) => ({ ...f, fecha: e.target.value }))
@@ -5076,10 +5104,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                   />
                 </div>
                 <div>
-                  <label className="text-sm">Cancha</label>
+                  <label className='text-sm'>Cancha</label>
                   <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
-                    placeholder="Ej. Club A"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. Club A'
                     value={matchForm.cancha}
                     onChange={(e) =>
                       setMatchForm((f) => ({ ...f, cancha: e.target.value }))
@@ -5088,26 +5116,26 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenMatch(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  type='submit'
                   disabled={requiereInterzonal}
                   title={
                     requiereInterzonal
                       ? 'Debés marcar "Partido interzonal".'
-                      : ""
+                      : ''
                   }
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white
              bg-gradient-to-r from-indigo-600 to-purple-600
              hover:from-indigo-700 hover:to-purple-700
-             disabled:opacity-60 disabled:cursor-not-allowed"
+             disabled:opacity-60 disabled:cursor-not-allowed'
                 >
                   Crear
                 </button>
@@ -5120,22 +5148,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Nuevo equipo */}
       {openTeam && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenTeam(false)}
         >
           <div
-            className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2"
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">Nuevo equipo</h3>
+            <h3 className='text-lg font-semibold mb-3'>Nuevo equipo</h3>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const nombre = (teamForm.nombre || "").trim();
-                if (!nombre) return alert("Poné un nombre de equipo.");
+                const nombre = (teamForm.nombre || '').trim();
+                if (!nombre) return alert('Poné un nombre de equipo.');
                 const key = nameKey(nombre);
                 const existe = equipos.some(
-                  (t) => nameKey(t.nombre || "") === key
+                  (t) => nameKey(t.nombre || '') === key
                 );
                 if (existe) {
                   alert(
@@ -5143,29 +5171,29 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                   );
                   return;
                 }
-                const grupoNew = (teamForm.grupo || "").trim().toUpperCase();
+                const grupoNew = (teamForm.grupo || '').trim().toUpperCase();
                 const teamPayload = {
                   nombre,
-                  logoUrl: (teamForm.logoUrl || "").trim(),
+                  logoUrl: (teamForm.logoUrl || '').trim(),
                   nombreKey: key,
                   createdAt: serverTimestamp(),
                 };
                 if (grupoNew) teamPayload.grupo = grupoNew;
 
-                addDoc(collection(db, "torneos", id, "equipos"), teamPayload)
+                addDoc(collection(db, 'torneos', id, 'equipos'), teamPayload)
                   .then(() => setOpenTeam(false))
                   .catch((err) => {
                     console.error(err);
-                    alert("No se pudo crear el equipo.");
+                    alert('No se pudo crear el equipo.');
                   });
               }}
-              className="space-y-3"
+              className='space-y-3'
             >
               <div>
-                <label className="text-sm">Nombre</label>
+                <label className='text-sm'>Nombre</label>
                 <input
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
-                  placeholder="Ej. Los Tigres"
+                  className='mt-1 w-full rounded-xl border px-3 py-2'
+                  placeholder='Ej. Los Tigres'
                   value={teamForm.nombre}
                   onChange={(e) =>
                     setTeamForm((f) => ({ ...f, nombre: e.target.value }))
@@ -5174,18 +5202,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 />
               </div>
               <div>
-                <label className="text-sm">Logo</label>
+                <label className='text-sm'>Logo</label>
 
                 {/* Subir desde celular/PC */}
-                <div className="mt-1 flex items-center gap-3 flex-wrap">
+                <div className='mt-1 flex items-center gap-3 flex-wrap'>
                   {/* input real oculto */}
                   <input
                     ref={newLogoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
+                    type='file'
+                    accept='image/*'
+                    className='hidden'
                     onChange={async (e) => {
-                      setTeamUploadError("");
+                      setTeamUploadError('');
                       const file = e.target.files?.[0];
                       if (!file) return;
                       setTeamLogoName(file.name);
@@ -5194,12 +5222,12 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         const dataURL = await compressImageFileToDataURL(file, {
                           maxSize: 256,
                         });
-                        const url = await uploadToCloudinary(dataURL, "logos");
+                        const url = await uploadToCloudinary(dataURL, 'logos');
                         setTeamForm((f) => ({ ...f, logoUrl: url }));
                       } catch (err) {
                         console.error(err);
                         setTeamUploadError(
-                          "No se pudo subir el logo. Probá otra imagen."
+                          'No se pudo subir el logo. Probá otra imagen.'
                         );
                       } finally {
                         setTeamUploadBusy(false);
@@ -5209,41 +5237,41 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
                   {/* botón visible */}
                   <button
-                    type="button"
+                    type='button'
                     onClick={() => newLogoInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+                    className='inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
                   >
                     <IconUpload /> Seleccionar archivo
                   </button>
 
                   {/* nombre del archivo */}
-                  <span className="text-sm text-gray-600 truncate max-w-[60%]">
-                    {teamLogoName || "Ningún archivo seleccionado"}
+                  <span className='text-sm text-gray-600 truncate max-w-[60%]'>
+                    {teamLogoName || 'Ningún archivo seleccionado'}
                   </span>
 
                   {/* estado de subida */}
                   {teamUploadBusy && (
-                    <span className="inline-flex items-center gap-2 text-sm text-gray-600">
-                      <Spinner className="w-4 h-4" /> Subiendo…
+                    <span className='inline-flex items-center gap-2 text-sm text-gray-600'>
+                      <Spinner className='w-4 h-4' /> Subiendo…
                     </span>
                   )}
                 </div>
 
                 {/* Preview + limpiar */}
                 {teamForm.logoUrl && (
-                  <div className="mt-2 flex items-center gap-3">
+                  <div className='mt-2 flex items-center gap-3'>
                     <img
                       src={teamForm.logoUrl}
-                      alt="logo"
-                      className="rounded-md object-cover border"
+                      alt='logo'
+                      className='rounded-md object-cover border'
                       style={{ width: 48, height: 48 }}
                     />
                     <button
-                      type="button"
+                      type='button'
                       onClick={() =>
-                        setTeamForm((f) => ({ ...f, logoUrl: "" }))
+                        setTeamForm((f) => ({ ...f, logoUrl: '' }))
                       }
-                      className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs"
+                      className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs'
                     >
                       Quitar logo
                     </button>
@@ -5251,10 +5279,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 )}
 
                 {/* Alternativa por URL (opcional) */}
-                <div className="mt-2">
+                <div className='mt-2'>
                   <input
-                    className="w-full rounded-xl border px-3 py-2 text-sm"
-                    placeholder="o pegá una URL (opcional)"
+                    className='w-full rounded-xl border px-3 py-2 text-sm'
+                    placeholder='o pegá una URL (opcional)'
                     value={teamForm.logoUrl}
                     onChange={(e) =>
                       setTeamForm((f) => ({
@@ -5267,17 +5295,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
                 {/* Estado */}
                 {teamUploadBusy && (
-                  <div className="text-xs text-gray-600 mt-1">
+                  <div className='text-xs text-gray-600 mt-1'>
                     Subiendo logo…
                   </div>
                 )}
                 {teamUploadError && (
-                  <div className="text-xs text-red-600 mt-1">
+                  <div className='text-xs text-red-600 mt-1'>
                     {teamUploadError}
                   </div>
                 )}
                 {!teamForm.logoUrl && !teamUploadBusy && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className='text-xs text-gray-500 mt-1'>
                     Tip: también podés pegar una URL si ya tenés el logo
                     hosteado.
                   </p>
@@ -5286,11 +5314,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
               {/* NUEVO: Grupo */}
               <div>
-                <label className="text-sm">Grupo (opcional)</label>
-                <div className="flex flex-col gap-2">
+                <label className='text-sm'>Grupo (opcional)</label>
+                <div className='flex flex-col gap-2'>
                   <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
-                    placeholder="Ej. A, B, C…"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. A, B, C…'
                     value={teamForm.grupo}
                     onChange={(e) =>
                       setTeamForm((f) => ({
@@ -5301,15 +5329,15 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                   />
                   {/* Atajos de grupos existentes */}
                   {gruposActivos.length > 0 && (
-                    <div className="flex gap-2 flex-wrap">
+                    <div className='flex gap-2 flex-wrap'>
                       {gruposActivos.map((g) => (
                         <button
                           key={g}
-                          type="button"
+                          type='button'
                           onClick={() =>
                             setTeamForm((f) => ({ ...f, grupo: g }))
                           }
-                          className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm"
+                          className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm'
                           title={`Usar grupo ${g}`}
                         >
                           {g}
@@ -5318,23 +5346,23 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className='text-xs text-gray-500 mt-1'>
                   Usá una letra (A, B, C) o un nombre corto. Se muestra como
                   “Grupo A”.
                 </p>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenTeam(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700"
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
                 >
                   Crear
                 </button>
@@ -5346,25 +5374,25 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Editar equipo */}
       {openEditTeam && editingTeam && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenEditTeam(false)}
         >
           <div
-            className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2"
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">Editar equipo</h3>
+            <h3 className='text-lg font-semibold mb-3'>Editar equipo</h3>
             {editTeamError && (
-              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
+              <div className='mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 p-3 text-sm'>
                 {editTeamError}
               </div>
             )}
 
-            <form onSubmit={guardarEdicionEquipo} className="space-y-3">
+            <form onSubmit={guardarEdicionEquipo} className='space-y-3'>
               <div>
-                <label className="text-sm">Nombre</label>
+                <label className='text-sm'>Nombre</label>
                 <input
-                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  className='mt-1 w-full rounded-xl border px-3 py-2'
                   value={editTeamForm.nombre}
                   onChange={(e) =>
                     setEditTeamForm((f) => ({ ...f, nombre: e.target.value }))
@@ -5374,18 +5402,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               </div>
 
               <div>
-                <label className="text-sm">Logo</label>
+                <label className='text-sm'>Logo</label>
 
                 {/* Subir desde celular/PC */}
-                <div className="mt-1 flex items-center gap-3 flex-wrap">
+                <div className='mt-1 flex items-center gap-3 flex-wrap'>
                   {/* input real oculto */}
                   <input
                     ref={editLogoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
+                    type='file'
+                    accept='image/*'
+                    className='hidden'
                     onChange={async (e) => {
-                      setEditUploadError("");
+                      setEditUploadError('');
                       const file = e.target.files?.[0];
                       if (!file) return;
                       setEditLogoName(file.name);
@@ -5394,12 +5422,12 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         const dataURL = await compressImageFileToDataURL(file, {
                           maxSize: 256,
                         });
-                        const url = await uploadToCloudinary(dataURL, "logos");
+                        const url = await uploadToCloudinary(dataURL, 'logos');
                         setEditTeamForm((f) => ({ ...f, logoUrl: url }));
                       } catch (err) {
                         console.error(err);
                         setEditUploadError(
-                          "No se pudo subir el logo. Probá otra imagen."
+                          'No se pudo subir el logo. Probá otra imagen.'
                         );
                       } finally {
                         setEditUploadBusy(false);
@@ -5409,41 +5437,41 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
                   {/* botón visible */}
                   <button
-                    type="button"
+                    type='button'
                     onClick={() => editLogoInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+                    className='inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50'
                   >
                     <IconUpload /> Seleccionar archivo
                   </button>
 
                   {/* nombre del archivo */}
-                  <span className="text-sm text-gray-600 truncate max-w-[60%]">
-                    {editLogoName || "Ningún archivo seleccionado"}
+                  <span className='text-sm text-gray-600 truncate max-w-[60%]'>
+                    {editLogoName || 'Ningún archivo seleccionado'}
                   </span>
 
                   {/* estado de subida */}
                   {editUploadBusy && (
-                    <span className="inline-flex items-center gap-2 text-sm text-gray-600">
-                      <Spinner className="w-4 h-4" /> Subiendo…
+                    <span className='inline-flex items-center gap-2 text-sm text-gray-600'>
+                      <Spinner className='w-4 h-4' /> Subiendo…
                     </span>
                   )}
                 </div>
 
                 {/* Preview + limpiar */}
                 {editTeamForm.logoUrl && (
-                  <div className="mt-2 flex items-center gap-3">
+                  <div className='mt-2 flex items-center gap-3'>
                     <img
                       src={editTeamForm.logoUrl}
-                      alt="logo"
-                      className="rounded-md object-cover border"
+                      alt='logo'
+                      className='rounded-md object-cover border'
                       style={{ width: 48, height: 48 }}
                     />
                     <button
-                      type="button"
+                      type='button'
                       onClick={() =>
-                        setEditTeamForm((f) => ({ ...f, logoUrl: "" }))
+                        setEditTeamForm((f) => ({ ...f, logoUrl: '' }))
                       }
-                      className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs"
+                      className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs'
                     >
                       Quitar logo
                     </button>
@@ -5451,10 +5479,10 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 )}
 
                 {/* Alternativa por URL (opcional) */}
-                <div className="mt-2">
+                <div className='mt-2'>
                   <input
-                    className="w-full rounded-xl border px-3 py-2 text-sm"
-                    placeholder="o pegá una URL (opcional)"
+                    className='w-full rounded-xl border px-3 py-2 text-sm'
+                    placeholder='o pegá una URL (opcional)'
                     value={editTeamForm.logoUrl}
                     onChange={(e) =>
                       setEditTeamForm((f) => ({
@@ -5467,26 +5495,26 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
 
                 {/* Estado */}
                 {editUploadBusy && (
-                  <div className="text-xs text-gray-600 mt-1">
+                  <div className='text-xs text-gray-600 mt-1'>
                     Subiendo logo…
                   </div>
                 )}
                 {editUploadError && (
-                  <div className="text-xs text-red-600 mt-1">
+                  <div className='text-xs text-red-600 mt-1'>
                     {editUploadError}
                   </div>
                 )}
               </div>
 
               <div>
-                <label className="text-sm">Grupo (opcional)</label>
-                <div className="flex flex-col gap-2">
+                <label className='text-sm'>Grupo (opcional)</label>
+                <div className='flex flex-col gap-2'>
                   <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
-                    placeholder="Ej. A, B, C… (vacío para quitar grupo)"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. A, B, C… (vacío para quitar grupo)'
                     value={editTeamForm.grupo}
                     onChange={(e) => {
-                      setEditTeamError("");
+                      setEditTeamError('');
                       setEditTeamForm((f) => ({
                         ...f,
                         grupo: e.target.value.toUpperCase().slice(0, 3),
@@ -5494,48 +5522,48 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     }}
                   />
                   {gruposActivos.length > 0 && (
-                    <div className="flex gap-2 flex-wrap">
+                    <div className='flex gap-2 flex-wrap'>
                       {gruposActivos.map((g) => (
                         <button
                           key={g}
-                          type="button"
+                          type='button'
                           onClick={() =>
                             setEditTeamForm((f) => ({ ...f, grupo: g }))
                           }
-                          className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm"
+                          className='px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm'
                         >
                           {g}
                         </button>
                       ))}
                       <button
-                        type="button"
+                        type='button'
                         onClick={() =>
-                          setEditTeamForm((f) => ({ ...f, grupo: "" }))
+                          setEditTeamForm((f) => ({ ...f, grupo: '' }))
                         }
-                        className="px-2 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-sm"
-                        title="Quitar grupo"
+                        className='px-2 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-sm'
+                        title='Quitar grupo'
                       >
                         Sin grupo
                       </button>
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className='text-xs text-gray-500 mt-1'>
                   Dejá vacío para quitar el grupo.
                 </p>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenEditTeam(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700"
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700'
                 >
                   Guardar
                 </button>
@@ -5548,46 +5576,46 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Confirmar eliminar partido */}
       {openDeleteMatch && matchToDelete && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={cancelarBorrarPartido}
         >
           <div
-            className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2"
+            className='w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease] max-h-[90vh] overflow-y-auto mx-2'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">
+            <h3 className='text-lg font-semibold mb-3'>
               ¿Estás seguro que quieres eliminar el partido?
             </h3>
-            <p className="text-sm text-gray-600 mb-3">
+            <p className='text-sm text-gray-600 mb-3'>
               <EquipoTag
-                nombre={equiposMap[matchToDelete.localId] || "Local"}
+                nombre={equiposMap[matchToDelete.localId] || 'Local'}
                 logoUrl={
                   equipos.find((e) => e.id === matchToDelete.localId)?.logoUrl
                 }
-              />{" "}
-              vs{" "}
+              />{' '}
+              vs{' '}
               <EquipoTag
-                nombre={equiposMap[matchToDelete.visitanteId] || "Visitante"}
+                nombre={equiposMap[matchToDelete.visitanteId] || 'Visitante'}
                 logoUrl={
                   equipos.find((e) => e.id === matchToDelete.visitanteId)
                     ?.logoUrl
                 }
               />
-              <div className="text-xs mt-1">
+              <div className='text-xs mt-1'>
                 {fmtFecha(matchToDelete.dia)}
-                {matchToDelete.cancha ? ` · ${matchToDelete.cancha}` : ""}
+                {matchToDelete.cancha ? ` · ${matchToDelete.cancha}` : ''}
               </div>
             </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className='flex items-center justify-end gap-2 pt-2'>
               <button
                 onClick={cancelarBorrarPartido}
-                className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
               >
                 Cancelar
               </button>
               <button
                 onClick={ejecutarBorrarPartido}
-                className="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700"
+                className='px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700'
               >
                 Eliminar
               </button>
@@ -5599,22 +5627,22 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Copas manual (mejorado + scrollable) */}
       {openCopasManual && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4'
           onClick={() => setOpenCopasManual(false)}
         >
           <div
-            className="w-full max-w-5xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-[fadeIn_.15s_ease]"
+            className='w-full max-w-5xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header sticky */}
-            <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b px-5 py-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg sm:text-xl font-semibold">
+            <div className='sticky top-0 z-10 bg-white/80 backdrop-blur border-b px-5 py-4'>
+              <div className='flex items-center justify-between'>
+                <h3 className='text-lg sm:text-xl font-semibold'>
                   Asignar copas (manual)
                 </h3>
                 <button
                   onClick={() => setOpenCopasManual(false)}
-                  className="px-3 py-1.5 rounded-xl border bg-white hover:bg-gray-50 text-sm"
+                  className='px-3 py-1.5 rounded-xl border bg-white hover:bg-gray-50 text-sm'
                 >
                   Cerrar
                 </button>
@@ -5624,66 +5652,66 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
             {/* Contenido scrollable */}
             <form
               onSubmit={guardarCopasManual}
-              className="overflow-y-auto px-5 py-4 space-y-4"
+              className='overflow-y-auto px-5 py-4 space-y-4'
             >
               {/* Cupos */}
-              <div className="rounded-2xl border p-4">
-                <div className="text-sm font-medium mb-3">Cupos por copa</div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center">
-                  <label className="flex items-center gap-2 text-sm">
-                    <span className="w-14">Oro</span>
+              <div className='rounded-2xl border p-4'>
+                <div className='text-sm font-medium mb-3'>Cupos por copa</div>
+                <div className='grid grid-cols-1 sm:grid-cols-4 gap-4 items-center'>
+                  <label className='flex items-center gap-2 text-sm'>
+                    <span className='w-14'>Oro</span>
                     <input
-                      type="number"
+                      type='number'
                       min={0}
                       max={equipos.length}
-                      className="w-24 rounded-xl border px-3 py-2"
+                      className='w-24 rounded-xl border px-3 py-2'
                       value={copaMax.oro}
                       onChange={(e) => {
                         const n = Math.max(
                           0,
                           Math.min(
                             equipos.length,
-                            parseInt(e.target.value || "0", 10)
+                            parseInt(e.target.value || '0', 10)
                           )
                         );
                         setCopaMax((m) => ({ ...m, oro: n }));
                       }}
                     />
                   </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <span className="w-14">Plata</span>
+                  <label className='flex items-center gap-2 text-sm'>
+                    <span className='w-14'>Plata</span>
                     <input
-                      type="number"
+                      type='number'
                       min={0}
                       max={equipos.length}
-                      className="w-24 rounded-xl border px-3 py-2"
+                      className='w-24 rounded-xl border px-3 py-2'
                       value={copaMax.plata}
                       onChange={(e) => {
                         const n = Math.max(
                           0,
                           Math.min(
                             equipos.length,
-                            parseInt(e.target.value || "0", 10)
+                            parseInt(e.target.value || '0', 10)
                           )
                         );
                         setCopaMax((m) => ({ ...m, plata: n }));
                       }}
                     />
                   </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <span className="w-14">Bronce</span>
+                  <label className='flex items-center gap-2 text-sm'>
+                    <span className='w-14'>Bronce</span>
                     <input
-                      type="number"
+                      type='number'
                       min={0}
                       max={equipos.length}
-                      className="w-24 rounded-xl border px-3 py-2"
+                      className='w-24 rounded-xl border px-3 py-2'
                       value={copaMax.bronce}
                       onChange={(e) => {
                         const n = Math.max(
                           0,
                           Math.min(
                             equipos.length,
-                            parseInt(e.target.value || "0", 10)
+                            parseInt(e.target.value || '0', 10)
                           )
                         );
                         setCopaMax((m) => ({ ...m, bronce: n }));
@@ -5691,39 +5719,39 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     />
                   </label>
 
-                  <div className="sm:ml-auto">
+                  <div className='sm:ml-auto'>
                     <button
-                      type="button"
+                      type='button'
                       onClick={autoRellenarCopas}
-                      className="w-full sm:w-auto px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm"
+                      className='w-full sm:w-auto px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm'
                     >
-                      Autorrellenar{" "}
+                      Autorrellenar{' '}
                       {gruposActivos.length >= 2
-                        ? "por grupos"
-                        : "por posiciones"}
+                        ? 'por grupos'
+                        : 'por posiciones'}
                     </button>
                   </div>
                 </div>
               </div>
 
               {/* Selección */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {["oro", "plata", "bronce"].map((copa) => (
+              <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+                {['oro', 'plata', 'bronce'].map((copa) => (
                   <div
                     key={copa}
-                    className="rounded-2xl border p-0 overflow-hidden bg-white"
+                    className='rounded-2xl border p-0 overflow-hidden bg-white'
                   >
-                    <div className="px-4 py-3 font-medium border-b capitalize">
+                    <div className='px-4 py-3 font-medium border-b capitalize'>
                       Copa {copa}
                     </div>
 
                     {/* Lista scrollable por columna (ordenada por grupo y nombre) */}
-                    <div className="max-h-80 overflow-y-auto p-3 space-y-1">
+                    <div className='max-h-80 overflow-y-auto p-3 space-y-1'>
                       {equipos
                         .slice()
                         .sort((a, b) => {
-                          const ga = (a.grupo || "").toString().toUpperCase();
-                          const gb = (b.grupo || "").toString().toUpperCase();
+                          const ga = (a.grupo || '').toString().toUpperCase();
+                          const gb = (b.grupo || '').toString().toUpperCase();
                           return (
                             ga.localeCompare(gb) ||
                             a.nombre.localeCompare(b.nombre)
@@ -5735,7 +5763,7 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                             !checked &&
                             (copasSel[copa]?.length || 0) >=
                               (copaMax[copa] || 0);
-                          const g = (e.grupo || "")
+                          const g = (e.grupo || '')
                             .toString()
                             .trim()
                             .toUpperCase();
@@ -5743,36 +5771,36 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                             <label
                               key={`${copa}-${e.id}`}
                               className={`flex items-center gap-3 text-sm rounded-lg px-2 py-1.5 cursor-pointer hover:bg-gray-50 ${
-                                disabled ? "opacity-50 cursor-not-allowed" : ""
+                                disabled ? 'opacity-50 cursor-not-allowed' : ''
                               }`}
-                              title={disabled ? "Cupo completo" : ""}
+                              title={disabled ? 'Cupo completo' : ''}
                             >
                               <input
-                                type="checkbox"
-                                className="accent-gray-800 w-4 h-4"
+                                type='checkbox'
+                                className='accent-gray-800 w-4 h-4'
                                 checked={checked}
                                 disabled={disabled}
                                 onChange={() => toggleCopa(copa, e.id)}
                               />
-                              <span className="truncate">{e.nombre}</span>
+                              <span className='truncate'>{e.nombre}</span>
 
                               {/* Chip de grupo al extremo derecho */}
                               <span
                                 className={`ml-auto text-[10px] px-2 py-0.5 rounded-full ${
                                   g
-                                    ? "bg-gray-100 text-gray-700"
-                                    : "bg-gray-50 text-gray-400"
+                                    ? 'bg-gray-100 text-gray-700'
+                                    : 'bg-gray-50 text-gray-400'
                                 }`}
                               >
-                                {g ? `Grupo ${g}` : "Sin grupo"}
+                                {g ? `Grupo ${g}` : 'Sin grupo'}
                               </span>
                             </label>
                           );
                         })}
                     </div>
 
-                    <div className="px-4 py-2 text-xs text-gray-500 border-t">
-                      {copasSel[copa]?.length || 0}/{copaMax[copa]}{" "}
+                    <div className='px-4 py-2 text-xs text-gray-500 border-t'>
+                      {copasSel[copa]?.length || 0}/{copaMax[copa]}{' '}
                       seleccionados
                     </div>
                   </div>
@@ -5781,18 +5809,18 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
             </form>
 
             {/* Footer sticky */}
-            <div className="sticky bottom-0 z-10 bg-white/80 backdrop-blur border-t px-5 py-3 flex items-center justify-end gap-2">
+            <div className='sticky bottom-0 z-10 bg-white/80 backdrop-blur border-t px-5 py-3 flex items-center justify-end gap-2'>
               <button
-                type="button"
+                type='button'
                 onClick={() => setOpenCopasManual(false)}
-                className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
               >
                 Cancelar
               </button>
               <button
-                formAction="submit"
+                formAction='submit'
                 onClick={guardarCopasManual}
-                className="px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black"
+                className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
               >
                 Guardar
               </button>
@@ -5804,36 +5832,36 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Modal: Mini-fixture Copas */}
       {openCopaModal && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenCopaModal(false)}
         >
           <div
-            className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]"
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">
-              Mini-fixture{" "}
-              {copaModalKey === "copa-oro"
-                ? "Copa Oro"
-                : copaModalKey === "copa-plata"
-                ? "Copa Plata"
-                : "Copa Bronce"}
+            <h3 className='text-lg font-semibold mb-3'>
+              Mini-fixture{' '}
+              {copaModalKey === 'copa-oro'
+                ? 'Copa Oro'
+                : copaModalKey === 'copa-plata'
+                ? 'Copa Plata'
+                : 'Copa Bronce'}
             </h3>
             <form
               onSubmit={guardarFixtureCopaConDetalles}
-              className="space-y-3"
+              className='space-y-3'
             >
               {copaModalPairs.map((p, idx) => (
-                <div key={idx} className="rounded-xl border p-3">
-                  <div className="text-sm font-medium mb-2">
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='text-sm font-medium mb-2'>
                     {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
                     <div>
-                      <label className="text-sm">Fecha & hora</label>
+                      <label className='text-sm'>Fecha & hora</label>
                       <input
-                        type="datetime-local"
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.fecha}
                         onChange={(e) =>
                           setCopaModalPairs((arr) => {
@@ -5845,11 +5873,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         required
                       />
                     </div>
-                    <div className="md:col-span-2">
-                      <label className="text-sm">Cancha</label>
+                    <div className='md:col-span-2'>
+                      <label className='text-sm'>Cancha</label>
                       <input
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
-                        placeholder="Ej. Club A"
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
                         value={p.cancha}
                         onChange={(e) =>
                           setCopaModalPairs((arr) => {
@@ -5868,17 +5896,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
               ))}
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenCopaModal(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black"
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                 >
                   Crear partidos
                 </button>
@@ -5891,28 +5919,28 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Modal: Fixture por Grupo */}
       {openGrupoModal && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenGrupoModal(false)}
         >
           <div
-            className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]"
+            className='w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">
+            <h3 className='text-lg font-semibold mb-3'>
               Programar cruces · Grupo {grupoModalKey}
             </h3>
-            <form onSubmit={guardarFixtureGrupo} className="space-y-3">
+            <form onSubmit={guardarFixtureGrupo} className='space-y-3'>
               {grupoModalPairs.map((p, idx) => (
-                <div key={idx} className="rounded-xl border p-3">
-                  <div className="text-sm font-medium mb-2">
+                <div key={idx} className='rounded-xl border p-3'>
+                  <div className='text-sm font-medium mb-2'>
                     {equiposMap[p.localId]} vs {equiposMap[p.visitanteId]}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
                     <div>
-                      <label className="text-sm">Fecha & hora</label>
+                      <label className='text-sm'>Fecha & hora</label>
                       <input
-                        type="datetime-local"
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
+                        type='datetime-local'
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
                         value={p.fecha}
                         onChange={(e) =>
                           setGrupoModalPairs((arr) => {
@@ -5924,11 +5952,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                         required
                       />
                     </div>
-                    <div className="md:col-span-2">
-                      <label className="text-sm">Cancha</label>
+                    <div className='md:col-span-2'>
+                      <label className='text-sm'>Cancha</label>
                       <input
-                        className="mt-1 w-full rounded-xl border px-3 py-2"
-                        placeholder="Ej. Club A"
+                        className='mt-1 w-full rounded-xl border px-3 py-2'
+                        placeholder='Ej. Club A'
                         value={p.cancha}
                         onChange={(e) =>
                           setGrupoModalPairs((arr) => {
@@ -5946,17 +5974,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                   </div>
                 </div>
               ))}
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenGrupoModal(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black"
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                 >
                   Crear partidos
                 </button>
@@ -5969,38 +5997,38 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Editar fecha/cancha */}
       {openEditMeta && metaMatch && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={closeEditarMeta}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            className='w-full max-w-md rounded-2xl bg-white p-5 shadow-xl'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">
+            <h3 className='text-lg font-semibold mb-3'>
               Editar fecha y cancha
             </h3>
-            <div className="text-sm text-gray-600 mb-3">
-              {equiposMap[metaMatch.localId]} vs{" "}
+            <div className='text-sm text-gray-600 mb-3'>
+              {equiposMap[metaMatch.localId]} vs{' '}
               {equiposMap[metaMatch.visitanteId]}
             </div>
 
-            <form onSubmit={guardarMeta} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form onSubmit={guardarMeta} className='space-y-3'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div>
-                  <label className="text-sm">Fecha & hora</label>
+                  <label className='text-sm'>Fecha & hora</label>
                   <input
-                    type="datetime-local"
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    type='datetime-local'
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
                     value={metaFecha}
                     onChange={(e) => setMetaFecha(e.target.value)}
                     required
                   />
                 </div>
                 <div>
-                  <label className="text-sm">Cancha</label>
+                  <label className='text-sm'>Cancha</label>
                   <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2"
-                    placeholder="Ej. Club A"
+                    className='mt-1 w-full rounded-xl border px-3 py-2'
+                    placeholder='Ej. Club A'
                     value={metaCancha}
                     onChange={(e) => setMetaCancha(e.target.value)}
                     required
@@ -6008,17 +6036,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={closeEditarMeta}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black"
+                  type='submit'
+                  className='px-3 py-2 rounded-xl text-white bg-gray-900 hover:bg-black'
                 >
                   Guardar
                 </button>
@@ -6031,28 +6059,28 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
       {/* Playoffs config (con programación) */}
       {openPOConfig && canManage && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4"
+          className='fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] grid place-items-center px-4'
           onClick={() => setOpenPOConfig(false)}
         >
           <div
-            className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]"
+            className='w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl animate-[fadeIn_.15s_ease]'
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-3">Generar playoffs</h3>
+            <h3 className='text-lg font-semibold mb-3'>Generar playoffs</h3>
 
-            <form onSubmit={guardarPOConfig} className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-sm">Cantidad de equipos:</span>
+            <form onSubmit={guardarPOConfig} className='space-y-4'>
+              <div className='flex flex-wrap items-center gap-3'>
+                <span className='text-sm'>Cantidad de equipos:</span>
                 {[2, 4, 8, 16]
                   .filter((n) => n <= posicionesGenerales.length)
                   .map((n) => (
                     <label
                       key={n}
-                      className="inline-flex items-center gap-2 text-sm"
+                      className='inline-flex items-center gap-2 text-sm'
                     >
                       <input
-                        type="radio"
-                        name="poN"
+                        type='radio'
+                        name='poN'
                         value={n}
                         checked={poN === n}
                         onChange={() => {
@@ -6068,17 +6096,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                     </label>
                   ))}
                 {posicionesGenerales.length < 2 && (
-                  <span className="text-xs text-gray-500">
+                  <span className='text-xs text-gray-500'>
                     No hay suficientes equipos.
                   </span>
                 )}
               </div>
 
-              <div className="rounded-xl border p-3">
-                <div className="text-sm font-medium mb-2">
+              <div className='rounded-xl border p-3'>
+                <div className='text-sm font-medium mb-2'>
                   Seleccioná {poN} equipos
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-auto pr-1">
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-auto pr-1'>
                   {posicionesGenerales.map((t) => {
                     const checked = poSeleccion.includes(t.id);
                     const disabled = !checked && poSeleccion.length >= poN;
@@ -6086,11 +6114,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                       <label
                         key={`po-${t.id}`}
                         className={`flex items-center gap-2 text-sm ${
-                          disabled ? "opacity-50" : ""
+                          disabled ? 'opacity-50' : ''
                         }`}
                       >
                         <input
-                          type="checkbox"
+                          type='checkbox'
                           checked={checked}
                           disabled={disabled}
                           onChange={() => {
@@ -6104,21 +6132,21 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                             });
                           }}
                         />
-                        <span className="truncate">{t.nombre}</span>
+                        <span className='truncate'>{t.nombre}</span>
                       </label>
                     );
                   })}
                 </div>
-                <div className="text-xs text-gray-500 mt-2">
+                <div className='text-xs text-gray-500 mt-2'>
                   {poSeleccion.length}/{poN} seleccionados
                 </div>
               </div>
 
-              <div className="rounded-xl border p-3 bg-gray-50">
-                <div className="text-sm font-medium mb-1">
+              <div className='rounded-xl border p-3 bg-gray-50'>
+                <div className='text-sm font-medium mb-1'>
                   Vista previa (siembra)
                 </div>
-                <ul className="list-disc pl-5 text-sm text-gray-700">
+                <ul className='list-disc pl-5 text-sm text-gray-700'>
                   {(() => {
                     const rankIndex = new Map(
                       posicionesGenerales.map((t, i) => [t.id, i])
@@ -6147,28 +6175,28 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
               </div>
 
               {/* NUEVO: Programación inicial */}
-              <div className="rounded-xl border p-3">
-                <div className="text-sm font-medium mb-1">
+              <div className='rounded-xl border p-3'>
+                <div className='text-sm font-medium mb-1'>
                   Programación inicial (fecha/hora & cancha)
                 </div>
                 {poPairs.length === 0 ? (
-                  <div className="text-xs text-gray-500">
+                  <div className='text-xs text-gray-500'>
                     Seleccioná {poN} equipos para ver los cruces.
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className='space-y-3'>
                     {poPairs.map((pr, idx) => (
-                      <div key={idx} className="rounded-xl border p-3">
-                        <div className="text-sm font-medium mb-2">
-                          {equiposMap[pr.localId]} vs{" "}
+                      <div key={idx} className='rounded-xl border p-3'>
+                        <div className='text-sm font-medium mb-2'>
+                          {equiposMap[pr.localId]} vs{' '}
                           {equiposMap[pr.visitanteId]}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
                           <div>
-                            <label className="text-sm">Fecha & hora</label>
+                            <label className='text-sm'>Fecha & hora</label>
                             <input
-                              type="datetime-local"
-                              className="mt-1 w-full rounded-xl border px-3 py-2"
+                              type='datetime-local'
+                              className='mt-1 w-full rounded-xl border px-3 py-2'
                               value={pr.fecha}
                               onChange={(e) =>
                                 setPoPairs((arr) => {
@@ -6183,11 +6211,11 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                               required
                             />
                           </div>
-                          <div className="md:col-span-2">
-                            <label className="text-sm">Cancha</label>
+                          <div className='md:col-span-2'>
+                            <label className='text-sm'>Cancha</label>
                             <input
-                              className="mt-1 w-full rounded-xl border px-3 py-2"
-                              placeholder="Ej. Club A"
+                              className='mt-1 w-full rounded-xl border px-3 py-2'
+                              placeholder='Ej. Club A'
                               value={pr.cancha}
                               onChange={(e) =>
                                 setPoPairs((arr) => {
@@ -6209,17 +6237,17 @@ const verSiArmarU17Femenino = async (matchCerrado) => {
                 )}
               </div>
 
-              <div className="flex items-center justify-end gap-2">
+              <div className='flex items-center justify-end gap-2'>
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => setOpenPOConfig(false)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                  className='px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200'
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  type='submit'
+                  className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700'
                 >
                   Crear cruces
                 </button>
