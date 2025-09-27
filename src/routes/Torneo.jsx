@@ -255,6 +255,7 @@ function labelFromYMD(ymd) {
   return new Date(y, m - 1, d).toLocaleDateString();
 }
 
+/* Tabla posiciones builder (con opciones) */
 /* Tabla posiciones builder */
 function buildTable(partidosFinalizados, equiposMap) {
   const table = {};
@@ -306,6 +307,106 @@ function buildTable(partidosFinalizados, equiposMap) {
       a.nombre.localeCompare(b.nombre)
   );
 }
+
+/* 👉 NUEVO: helper H2H SOLO para grupos (sin PF/PC) */
+/* 👉 POSICIONES POR GRUPO (incluye interzonales) con H2H primero */
+function standingsWithH2HForGroup(allMatches, equiposMap, idsDelGrupo) {
+  // idsDelGrupo puede ser Set o array con los equipos del grupo
+  const groupSet = new Set(idsDelGrupo || []);
+  const acc = new Map(); // id -> row
+
+  const ensure = (id) => {
+    if (!acc.has(id)) {
+      acc.set(id, {
+        id,
+        nombre: equiposMap[id] || 'Equipo',
+        pj: 0,
+        pg: 0,
+        pp: 0,
+        pf: 0,
+        pc: 0,
+        dif: 0,
+        pts: 0,
+      });
+    }
+    return acc.get(id);
+  };
+
+  // Tomamos TODOS los partidos finalizados donde participe un equipo del grupo,
+  // incluso si fueron interzonales o sin "grupo" seteado.
+  for (const p of allMatches) {
+    const sl = Number(p.scoreLocal),
+      sv = Number(p.scoreVisitante);
+    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) continue;
+    if (p.estado !== 'finalizado') continue;
+
+    const L = p.localId,
+      V = p.visitanteId;
+    const L_in = groupSet.has(L);
+    const V_in = groupSet.has(V);
+    if (!L_in && !V_in) continue; // si ninguno es del grupo, no suma
+
+    const tL = L_in ? ensure(L) : null;
+    const tV = V_in ? ensure(V) : null;
+
+    // Sumar stats sólo a los que pertenecen al grupo
+    if (tL) {
+      tL.pj++;
+      tL.pf += sl;
+      tL.pc += sv;
+      if (sl > sv) tL.pg++;
+      else tL.pp++;
+    }
+    if (tV) {
+      tV.pj++;
+      tV.pf += sv;
+      tV.pc += sl;
+      if (sv > sl) tV.pg++;
+      else tV.pp++;
+    }
+  }
+
+  // Cerrar dif/pts
+  for (const t of acc.values()) {
+    t.dif = t.pf - t.pc;
+    t.pts = t.pg * 2 + t.pp * 1;
+  }
+
+  const rows = Array.from(acc.values());
+
+  // --- H2H: diferencia entre empatados (suma todos los cruces entre A y B) ---
+  const h2hDiff = (aId, bId) => {
+    let diff = 0; // + => favorece a A
+    for (const m of allMatches) {
+      const isAB =
+        (m.localId === aId && m.visitanteId === bId) ||
+        (m.localId === bId && m.visitanteId === aId);
+      if (!isAB) continue;
+      const sl = Number(m.scoreLocal),
+        sv = Number(m.scoreVisitante);
+      if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl === sv) continue;
+      if (m.localId === aId) diff += sl - sv;
+      else diff += sv - sl;
+    }
+    return diff;
+  };
+
+  rows.sort((a, b) => {
+    if (b.pts !== a.pts) return b.pts - a.pts;
+
+    // 1) H2H por diferencia entre ellos (incluye interzonal si lo hubo)
+    const d = h2hDiff(a.id, b.id);
+    if (d !== 0) return d > 0 ? -1 : 1; // si A tiene diff positiva, A arriba
+
+    // 2) DIF global, 3) PF, 4) alfabético
+    return b.dif - a.dif || b.pf - a.pf || a.nombre.localeCompare(b.nombre);
+  });
+
+  return rows;
+}
+
+/* ---------- Playoffs helpers (NUEVO) ---------- */
+// ... sigue tu archivo
 
 /* ---------- Playoffs helpers (NUEVO) ---------- */
 const PO_FASES = ['octavos', 'cuartos', 'semi', 'final'];
@@ -1179,34 +1280,13 @@ export default function Torneo() {
   const posicionesPorGrupo = useMemo(() => {
     const out = {};
     for (const g of gruposActivos) {
-      // 1) Partidos dentro del grupo g
-      const intra = resultados.filter(
-        (p) => (p.grupo || '').toUpperCase() === g
-      );
-
-      // 2) Interzonales donde participa un equipo del grupo g
-      const inter = resultados.filter(
-        (p) =>
-          p.interzonal === true &&
-          ((
-            equipos.find((e) => e.id === p.localId)?.grupo || ''
-          ).toUpperCase() === g ||
-            (
-              equipos.find((e) => e.id === p.visitanteId)?.grupo || ''
-            ).toUpperCase() === g)
-      );
-
-      // 3) Tabla con ambos tipos y luego filtramos sólo equipos del grupo g
-      const tablaCompleta = buildTable([...intra, ...inter], equiposMap);
-      const idsGrupo = new Set(
-        equipos
-          .filter((e) => (e.grupo || '').toUpperCase() === g)
-          .map((e) => e.id)
-      );
-      out[g] = tablaCompleta.filter((t) => idsGrupo.has(t.id));
+      const ids = (equiposPorGrupo[g] || []).map((e) => e.id);
+      // 👇 Le paso TODOS los resultados (finalizados, sin fase), no sólo intra,
+      // y los ids del grupo para que cuente interzonales también.
+      out[g] = standingsWithH2HForGroup(resultados, equiposMap, ids);
     }
     return out;
-  }, [resultados, equipos, equiposMap, gruposActivos]);
+  }, [resultados, equiposMap, gruposActivos, equiposPorGrupo]);
 
   const fixtureGrouped = useMemo(() => {
     const byDate = {};
@@ -1960,6 +2040,33 @@ export default function Torneo() {
       'copa-bronce': buildTable(finales['copa-bronce'], equiposMap),
     };
   }, [fasePartidos, equiposMap]);
+
+  // Partidos FINALIZADOS de fase de grupos (sirven para H2H)
+  const resultadosDeGrupos = useMemo(
+    () => resultados.filter((p) => !p.fase), // ya son finalizados
+    [resultados]
+  );
+
+  // Tablas U17 (triangulares) con desempate por H2H del grupo
+  const u17OroTabla = useMemo(() => {
+    const fin = fasePartidos.filter(
+      (p) => p.fase === 'u17-oro' && p.estado === 'finalizado'
+    );
+    return buildTable(fin, equiposMap, {
+      h2hMatches: resultadosDeGrupos,
+      h2hFirst: true,
+    });
+  }, [fasePartidos, equiposMap, resultadosDeGrupos]);
+
+  const u17PlataTabla = useMemo(() => {
+    const fin = fasePartidos.filter(
+      (p) => p.fase === 'u17-plata' && p.estado === 'finalizado'
+    );
+    return buildTable(fin, equiposMap, {
+      h2hMatches: resultadosDeGrupos,
+      h2hFirst: true,
+    });
+  }, [fasePartidos, equiposMap, resultadosDeGrupos]);
 
   // ¿Hay copas en juego? (para mostrar el tab)
   const hayCopasEnJuego = useMemo(() => {
