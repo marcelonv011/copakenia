@@ -17,6 +17,8 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { isAdmin } from '../lib/firestore';
+import CargaEquipos from '../components/CargaEquipos';
+import { validarResultado } from '../lib/carga';
 
 /* ---------------- UI helpers ---------------- */
 const catPillClass = (c = '') =>
@@ -566,7 +568,7 @@ function MatchRow({
             title={isResult ? 'Editar resultado' : 'Cargar resultado'}
           >
             {isResult ? <IconEdit /> : <IconScore />}
-            {isResult ? 'Editar' : 'Cargar'}
+            {isResult ? 'Editar resultado' : 'Cargar resultado'}
           </button>
 
           {isResult && onRevert && (
@@ -624,6 +626,9 @@ export default function Torneo() {
   const [scoreLocal, setScoreLocal] = useState('');
   const [scoreVisitante, setScoreVisitante] = useState('');
   const [saving, setSaving] = useState(false);
+  const [resultError, setResultError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [openBulkTeams, setOpenBulkTeams] = useState(false);
   // Máximos anotadores
   const [topLocalName, setTopLocalName] = useState('');
   const [topLocalPts, setTopLocalPts] = useState('');
@@ -2081,6 +2086,7 @@ export default function Torneo() {
   /* ---------- Resultado ---------- */
   const openResultado = (match) => {
     if (!canManage) return;
+    setResultError('');
     setEditingMatch(match);
     setScoreLocal(
       Number.isFinite(match?.scoreLocal) ? String(match.scoreLocal) : ''
@@ -2104,6 +2110,7 @@ export default function Torneo() {
     setOpenResult(true);
   };
   const closeResultado = () => {
+    if (saving) return;
     setOpenResult(false);
     setEditingMatch(null);
     setScoreLocal('');
@@ -2182,36 +2189,31 @@ export default function Torneo() {
 
   const saveResultado = async (e) => {
     e.preventDefault();
-    if (!canManage || !editingMatch) return;
+    if (!canManage || !editingMatch || saving) return;
 
     // 1) Leer + validar marcadores
     const sl = Number(scoreLocal);
     const sv = Number(scoreVisitante);
-    if (!Number.isFinite(sl) || !Number.isFinite(sv) || sl < 0 || sv < 0) {
-      return alert('Cargá puntajes válidos.');
-    }
-    if (sl === sv) {
-      return alert('No se permiten empates.');
-    }
+    const validationError = validarResultado(scoreLocal, scoreVisitante);
+    if (validationError) return setResultError(validationError);
+    setResultError('');
 
     // 2) Validar máximos anotadores (tops)
     const lPts = topLocalPts === '' ? null : Number(topLocalPts);
     const vPts = topVisPts === '' ? null : Number(topVisPts);
     if (
-      (topLocalName && !Number.isFinite(lPts)) ||
-      (topVisName && !Number.isFinite(vPts))
+      (topLocalName.trim() && (!Number.isSafeInteger(lPts) || lPts < 0 || lPts > sl)) ||
+      (topVisName.trim() && (!Number.isSafeInteger(vPts) || vPts < 0 || vPts > sv)) ||
+      (!topLocalName.trim() && topLocalPts !== '') ||
+      (!topVisName.trim() && topVisPts !== '')
     ) {
-      return alert('Puntos de máximo anotador inválidos.');
+      return setResultError('Para cada anotador, completá nombre y puntos enteros entre 0 y el total de su equipo, o dejá ambos vacíos.');
     }
     const tops =
-      topLocalName || topVisName
+      topLocalName.trim() || topVisName.trim()
         ? {
-            local: topLocalName
-              ? { nombre: topLocalName.trim(), puntos: lPts ?? 0 }
-              : undefined,
-            visitante: topVisName
-              ? { nombre: topVisName.trim(), puntos: vPts ?? 0 }
-              : undefined,
+            ...(topLocalName.trim() ? { local: { nombre: topLocalName.trim(), puntos: lPts } } : {}),
+            ...(topVisName.trim() ? { visitante: { nombre: topVisName.trim(), puntos: vPts } } : {}),
           }
         : undefined;
 
@@ -2223,7 +2225,7 @@ export default function Torneo() {
         scoreLocal: sl,
         scoreVisitante: sv,
         estado: 'finalizado',
-        ...(tops ? { tops } : {}),
+        tops: tops || deleteField(),
         updatedAt: serverTimestamp(),
       });
 
@@ -2247,10 +2249,11 @@ export default function Torneo() {
 
       // 5) Cerrar modal
       closeResultado();
+      setNotice('Resultado guardado. Las posiciones se actualizan automáticamente.');
     } catch (err) {
       console.error(err);
       setSaving(false);
-      alert('No se pudo guardar el resultado.');
+      setResultError('No se pudo guardar el resultado. Revisá la conexión y volvé a intentar; tus datos siguen acá.');
     }
   };
 
@@ -3408,6 +3411,9 @@ export default function Torneo() {
 
   return (
     <div className='space-y-5'>
+      {notice && <div role='status' className='rounded-xl border border-green-200 bg-green-50 p-3 text-green-800 flex justify-between gap-3'>{notice}<button onClick={() => setNotice('')} aria-label='Cerrar aviso'>×</button></div>}
+      {openBulkTeams && canManage && <CargaEquipos torneoId={id} equipos={equipos} onClose={() => setOpenBulkTeams(false)} onSuccess={setNotice} />}
+      {canManage && <div className='flex flex-wrap gap-2'><button onClick={() => setOpenBulkTeams(true)} className={`${BTN} ${BTN_PRIMARY}`}><IconPlus /> Agregar varios equipos</button><button onClick={() => setTab('fixture')} className={`${BTN} ${BTN_SOFT}`}><IconScore /> Ir a cargar resultados</button></div>}
       {/* Header */}
       <div className='rounded-2xl p-[1px] bg-gradient-to-r from-blue-200/60 via-purple-200/60 to-pink-200/60'>
         <div className='rounded-2xl bg-white/70 backdrop-blur-md p-4 sm:p-5 border border-white/40'>
@@ -4410,12 +4416,17 @@ export default function Torneo() {
             </div>
 
             <form onSubmit={saveResultado} className='space-y-3'>
+              <fieldset disabled={saving} className='space-y-3'>
               <div className='grid grid-cols-2 gap-3'>
                 <div>
-                  <label className='text-xs text-gray-600'>
+                  <label htmlFor='score-local' className='text-xs text-gray-600'>
                     {equiposMap[editingMatch.localId] || 'Local'}
                   </label>
                   <input
+                    id='score-local'
+                    autoFocus
+                    onFocus={(e) => e.target.select()}
+                    step={1}
                     type='number'
                     min={0}
                     inputMode='numeric'
@@ -4426,10 +4437,13 @@ export default function Torneo() {
                   />
                 </div>
                 <div>
-                  <label className='text-xs text-gray-600'>
+                  <label htmlFor='score-visitante' className='text-xs text-gray-600'>
                     {equiposMap[editingMatch.visitanteId] || 'Visitante'}
                   </label>
                   <input
+                    id='score-visitante'
+                    onFocus={(e) => e.target.select()}
+                    step={1}
                     type='number'
                     min={0}
                     inputMode='numeric'
@@ -4442,6 +4456,9 @@ export default function Torneo() {
               </div>
 
               {/* Máximos anotadores */}
+              {scoreLocal !== '' && scoreVisitante !== '' && !validarResultado(scoreLocal, scoreVisitante) && <p className='rounded-xl bg-blue-50 p-3 text-sm text-blue-900' role='status'>Ganador: <strong>{equiposMap[Number(scoreLocal) > Number(scoreVisitante) ? editingMatch.localId : editingMatch.visitanteId]}</strong> · {scoreLocal} – {scoreVisitante}</p>}
+              <details open={editingMatch.tops ? true : undefined}>
+                <summary className='cursor-pointer py-2 text-sm font-medium'>Máximos anotadores (opcional)</summary>
               <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3'>
                 <div className='rounded-xl border p-3'>
                   <div className='text-xs text-gray-600 mb-1'>
@@ -4487,6 +4504,8 @@ export default function Torneo() {
                 </div>
               </div>
 
+              </details>
+              {resultError && <p role='alert' className='rounded-xl bg-red-50 p-3 text-sm text-red-700'>{resultError}</p>}
               <div className='flex items-center justify-end gap-2 pt-2'>
                 <button
                   type='button'
@@ -4500,9 +4519,10 @@ export default function Torneo() {
                   disabled={saving}
                   className='inline-flex items-center gap-2 px-3 py-2 rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60'
                 >
-                  {saving && <Spinner />} Guardar
+                  {saving && <Spinner />} {saving ? 'Guardando…' : 'Guardar resultado'}
                 </button>
               </div>
+              </fieldset>
             </form>
           </div>
         </div>
